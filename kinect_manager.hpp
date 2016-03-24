@@ -207,7 +207,7 @@ private:
     std::vector<uint8_t> color_buf_[kBufSize];
     std::vector<uint8_t> * current_frame_color_;
     std::queue<std::vector<uint8_t> * > color_queue_;
-    volatile bool push_color_queue_;
+    std::vector<uint8_t>* volatile push_color_queue_;
     volatile bool pop_color_queue_;
     int fourcc_color_;
     int fps_color_;
@@ -216,7 +216,7 @@ private:
     std::vector<float> depth_buf_[kBufSize];
     std::vector<float>* current_frame_depth_;
     std::queue<std::vector<float> * > depth_queue_;
-    volatile bool push_depth_queue_;
+    bool std::vector<float>* volatile push_depth_queue_;
     volatile bool pop_depth_queue_;
 
     

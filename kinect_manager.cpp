@@ -20,8 +20,8 @@ KinectManager::KinectManager( const std::string& out_dir,
       recorder_state_( InitialState ),
       current_frame_color_( nullptr ),
       current_frame_depth_( nullptr ),
-      push_color_queue_( false ),
-      push_depth_queue_( false ),
+      push_color_queue_( nullptr ),
+      push_depth_queue_( nullptr ),
       pop_color_queue_( false ),
       pop_depth_queue_( false ),
       fps_update_( 0.0 ),
@@ -368,11 +368,14 @@ void KinectManager::saveCurrentFrame(){
     if( push_color_queue_ )
         std::cerr << "warning: a color frame to be saved has been lost ("
                   << __func__ << ")." << std::endl;
-    else push_color_queue_ = true;
+    else
+        push_color_queue_ = current_frame_color_;
+    
     if( push_depth_queue_ )
         std::cerr << "warning: a depth frame to be saved has been lost ("
                   << __func__ << ")." << std::endl;
-    else push_depth_queue_ = true;
+    else
+        push_depth_queue_ = current_frame_depth_;
 }
 
 void KinectManager::enterMainLoop(){
@@ -534,11 +537,11 @@ void KinectManager::updateQueue(){
     
     if( push_color_queue_ ){
         color_queue_.push( current_frame_color_ );
-        push_color_queue_ = false;
+        push_color_queue_ = nullptr;
     }
     if( push_depth_queue_ ){
         depth_queue_.push( current_frame_depth_ );
-        push_depth_queue_ = false;
+        push_depth_queue_ = nullptr;
     }
     if( pop_color_queue_ && pop_depth_queue_ && ! color_queue_.empty() && ! depth_queue_.empty() ){
         
