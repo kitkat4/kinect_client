@@ -121,11 +121,11 @@ void KinectManager::init(){
         
         // allocate memory in advance to avoid overhead
         for( int i = 0; i < kBufSize; i++ ){
-            color_buf_[i].resize( kColorVecSize );
-            depth_buf_[i].resize( kDepthVecSize );
+            color_buf_[i].resize( kCNumOfChannels );
+            depth_buf_[i].resize( kDNumOfChannels );
         }
-        color_buf_idle_.resize( kColorVecSize );
-        depth_buf_idle_.resize( kDepthVecSize );        
+        color_buf_idle_.resize( kCNumOfChannels );
+        depth_buf_idle_.resize( kDNumOfChannels );        
     }catch( std::exception& ex ){
         std::cerr << "error in " << __func__ << ": " << ex.what() << std::endl;
         throw;
@@ -157,8 +157,8 @@ void KinectManager::startKinectAndCreateWindow(){
 
 void KinectManager::calibrate(){
 
-    static libfreenect2::Frame undistorted( kDepthFrameWidth, kDepthFrameHeight, kDepthBytesPerPixel );
-    static libfreenect2::Frame registered( kDepthFrameWidth, kDepthFrameHeight, kDepthBytesPerPixel );
+    static libfreenect2::Frame undistorted( kDWidth, kDHeight, kDNumOfBytesPerPixel );
+    static libfreenect2::Frame registered( kDWidth, kDHeight, kDNumOfBytesPerPixel );
     static cv::Mat registered_to_show;
 
     try{
@@ -167,15 +167,15 @@ void KinectManager::calibrate(){
         while( true ){
 
         
-            libfreenect2::Frame color_frame( kColorFrameWidth, kColorFrameHeight, kColorBytesPerPixel,
+            libfreenect2::Frame color_frame( kCWidth, kCHeight, kCNumOfBytesPerPixel,
                                              reinterpret_cast<uint8_t*>(current_frame_color_->data()) );
-            libfreenect2::Frame depth_frame( kDepthFrameWidth, kDepthFrameHeight, kDepthBytesPerPixel,
+            libfreenect2::Frame depth_frame( kDWidth, kDHeight, kDNumOfBytesPerPixel,
                                              reinterpret_cast<uint8_t*>(current_frame_depth_->data()) );
 
             registration_->apply( &color_frame, &depth_frame, &undistorted, &registered );
 
             cv::Mat color_8UC3;
-            cv::cvtColor( cv::Mat( kDepthFrameHeight, kDepthFrameWidth, CV_8UC4, registered.data ),
+            cv::cvtColor( cv::Mat( kDHeight, kDWidth, CV_8UC4, registered.data ),
                           color_8UC3, CV_BGRA2BGR );
         
             registered_to_show = color_8UC3.clone();
@@ -395,7 +395,7 @@ void KinectManager::enterMainLoop(){
         if( video_writer_for_main_thread_ && dir_path_for_main_thread_ ){
             video_writer_for_main_thread_->open( *dir_path_for_main_thread_ + "/color.avi",
                                                  fourcc_color_, fps_color_,
-                                                 cv::Size( kColorFrameWidth, kColorFrameHeight ));
+                                                 cv::Size( kCWidth, kCHeight ));
             video_writer_for_main_thread_ = nullptr;
             dir_path_for_main_thread_ = nullptr;
         }
@@ -457,8 +457,8 @@ void KinectManager::enterMainLoop(){
 void KinectManager::update(){
 
     static int buf_index = 0;
-    static uint8_t* data_dst_color = nullptr;
-    static float* data_dst_depth = nullptr;
+    static color_ch_t* data_dst_color = nullptr;
+    static depth_ch_t* data_dst_depth = nullptr;
 
     try{
 
@@ -478,13 +478,13 @@ void KinectManager::update(){
             }
 
             std::copy( frames_[libfreenect2::Frame::Color]->data,
-                       frames_[libfreenect2::Frame::Color]->data + kColorVecSize,
+                       frames_[libfreenect2::Frame::Color]->data + kCNumOfChannels,
                        data_dst_color );
-            std::copy( (float*)frames_[libfreenect2::Frame::Depth]->data,
-                       (float*)frames_[libfreenect2::Frame::Depth]->data + kDepthVecSize,
+            std::copy( (depth_ch_t*)frames_[libfreenect2::Frame::Depth]->data,
+                       (depth_ch_t*)frames_[libfreenect2::Frame::Depth]->data + kDNumOfChannels,
                        data_dst_depth );
 
-            cv::resize( cv::Mat( kColorFrameHeight, kColorFrameWidth,CV_8UC4,
+            cv::resize( cv::Mat( kCHeight, kCWidth,CV_8UC4,
                                  data_dst_color ),
                         img_to_show_, cv::Size(), kResizeScale, kResizeScale );
 
@@ -536,11 +536,11 @@ void KinectManager::update(){
 void KinectManager::updateQueue(){
     
     if( push_color_queue_ ){
-        color_queue_.push( const_cast<std::vector<uint8_t>*>( push_color_queue_ ) );
+        color_queue_.push( const_cast<std::vector<color_ch_t>*>( push_color_queue_ ) );
         push_color_queue_ = nullptr;
     }
     if( push_depth_queue_ ){
-        depth_queue_.push( const_cast<std::vector<float>*>( push_depth_queue_ ) );
+        depth_queue_.push( const_cast<std::vector<depth_ch_t>*>( push_depth_queue_ ) );
         push_depth_queue_ = nullptr;
     }
     if( pop_color_queue_ && pop_depth_queue_ && ! color_queue_.empty() && ! depth_queue_.empty() ){
@@ -632,7 +632,7 @@ void KinectManager::saveColor( cv::VideoWriter& video_writer ){
     }
 
     static cv::Mat tmp_color_img;
-    cv::cvtColor( cv::Mat( kColorFrameHeight, kColorFrameWidth, CV_8UC4, &color_queue_.front()->front() ),
+    cv::cvtColor( cv::Mat( kCHeight, kCWidth, CV_8UC4, &color_queue_.front()->front() ),
                   tmp_color_img, CV_BGRA2BGR );
     cv::flip( tmp_color_img, tmp_color_img, 1 ); // color images taken from kinect are mirrored
     video_writer << tmp_color_img;
@@ -643,8 +643,8 @@ void KinectManager::saveColor( cv::VideoWriter& video_writer ){
 
 bool KinectManager::saveDepth( const std::string& file_path ){
 
-    static libfreenect2::Frame undistorted( kDepthFrameWidth, kDepthFrameHeight, kDepthBytesPerPixel );
-    static libfreenect2::Frame registered( kDepthFrameWidth, kDepthFrameHeight, kDepthBytesPerPixel );
+    static libfreenect2::Frame undistorted( kDWidth, kDHeight, kDNumOfBytesPerPixel );
+    static libfreenect2::Frame registered( kDWidth, kDHeight, kDNumOfBytesPerPixel );
     
     if( pop_depth_queue_ )
         return false;
@@ -655,9 +655,9 @@ bool KinectManager::saveDepth( const std::string& file_path ){
         return false;
     }
 
-    libfreenect2::Frame color_frame( kColorFrameWidth, kColorFrameHeight, kColorBytesPerPixel,
-                                     &color_queue_.front()->at(0) );
-    libfreenect2::Frame depth_frame( kDepthFrameWidth, kDepthFrameHeight, kDepthBytesPerPixel,
+    libfreenect2::Frame color_frame( kCWidth, kCHeight, kCNumOfBytesPerPixel,
+                                     reinterpret_cast<uint8_t*>(&color_queue_.front()->at(0)) );
+    libfreenect2::Frame depth_frame( kDWidth, kDHeight, kDNumOfBytesPerPixel,
                                      reinterpret_cast<uint8_t*>(&depth_queue_.front()->at(0)) );
 
     registration_->apply( &color_frame, &depth_frame, &undistorted, &registered );
@@ -665,8 +665,8 @@ bool KinectManager::saveDepth( const std::string& file_path ){
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud( new pcl::PointCloud<pcl::PointXYZRGB> );
 
     float rgb_buf;
-    for( int i_row = 0; i_row < kDepthFrameHeight; i_row++ ){
-        for( int i_column = 0; i_column < kDepthFrameWidth; i_column++ ){
+    for( int i_row = 0; i_row < kDHeight; i_row++ ){
+        for( int i_column = 0; i_column < kDWidth; i_column++ ){
             pcl::PointXYZRGB point;
             float x,y,z;
             registration_->getPointXYZRGB( &undistorted, &registered, i_row, i_column,
@@ -734,7 +734,6 @@ void KinectManager::processRecvBuf( const std::vector<char>* buf,
                                     const std::size_t size ){
 
     static int32_t frame_id = 0, frame_id_prev = 0;
-    // static clock_t timestamp = clock();
         
     if( (*buf)[0] == 'c' ){
         if( 0 == strcmp( &(*buf)[0], "cestimate delay" ) ){
@@ -764,7 +763,6 @@ void KinectManager::processRecvBuf( const std::vector<char>* buf,
 
             static FpsCalculator fps_calc( 15 );
             fps_push_ = fps_calc.fps();
-            // std::cout << fps_push_ << std::endl;
 
             if( frame_id == frame_id_prev + 1 )
                 saveCurrentFrame();
@@ -788,14 +786,17 @@ void KinectManager::showImgAndInfo(){
 
     if( is( Recording ) )
         if( isManual() && ! specifyEachFrame() )
-            cv::putText( img_to_show_, "Recording ( s: stop recording, q: abort )" , cv::Point(10,40),
-                         cv::FONT_HERSHEY_SIMPLEX, kFontScale, cv::Scalar(0,0,255), kTextThickness );
+            cv::putText( img_to_show_, "Recording ( s: stop recording, q: abort )" ,
+                         cv::Point(10,40), cv::FONT_HERSHEY_SIMPLEX,
+                         kFontScale, cv::Scalar(0,0,255), kTextThickness );
         else
             cv::putText( img_to_show_, "Recording" , cv::Point(10,40),
-                         cv::FONT_HERSHEY_SIMPLEX, kFontScale, cv::Scalar(0,0,255), kTextThickness );
+                         cv::FONT_HERSHEY_SIMPLEX, kFontScale,
+                         cv::Scalar(0,0,255), kTextThickness );
     else if( is( ReadyToCalibrate ) )
         if( isManual() )
-            cv::putText( img_to_show_, "Ready to start calibration ( s: start calibration, c: recorder mode, q: abort )",
+            cv::putText( img_to_show_,
+                         "Ready to start calibration ( s: start calibration, c: recorder mode, q: abort )",
                          cv::Point(10,40), cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0,255,255),
                          kTextThickness );
         else
@@ -808,26 +809,31 @@ void KinectManager::showImgAndInfo(){
     else if( is( Calibrating ) )
         if( isManual() )
             cv::putText( img_to_show_, "Calibrating ( q: abort )", cv::Point(10,40),
-                         cv::FONT_HERSHEY_SIMPLEX, kFontScale, cv::Scalar(0,100,255), kTextThickness );
+                         cv::FONT_HERSHEY_SIMPLEX, kFontScale, cv::Scalar(0,100,255),
+                         kTextThickness );
         else
             cv::putText( img_to_show_, "Calibrating", cv::Point(10,40),
-                         cv::FONT_HERSHEY_SIMPLEX, kFontScale, cv::Scalar(0,100,255), kTextThickness );
+                         cv::FONT_HERSHEY_SIMPLEX, kFontScale,
+                         cv::Scalar(0,100,255), kTextThickness );
     else if( is( WritingData ) )
         if( isManual() && ! specifyEachFrame() )
             cv::putText( img_to_show_, "Writing files... ( q: abort )" , cv::Point(10,40),
-                         cv::FONT_HERSHEY_SIMPLEX, kFontScale, cv::Scalar(0,100,255), kTextThickness );
+                         cv::FONT_HERSHEY_SIMPLEX, kFontScale,
+                         cv::Scalar(0,100,255), kTextThickness );
         else
             cv::putText( img_to_show_, "Writing files..." , cv::Point(10,40),
                          cv::FONT_HERSHEY_SIMPLEX, kFontScale, cv::Scalar(0,100,255), kTextThickness );
     else if( is( ReadyToRecord ) )
         if( isManual() && ! specifyEachFrame() )
-            cv::putText( img_to_show_, "Ready to start recording ( s: start recording, c: calib mode, q: quit )",
-                         cv::Point(10,40), cv::FONT_HERSHEY_SIMPLEX, kFontScale, cv::Scalar(0,255,0),
+            cv::putText( img_to_show_,
+                         "Ready to start recording ( s: start recording, c: calib mode, q: quit )",
+                         cv::Point(10,40), cv::FONT_HERSHEY_SIMPLEX,
+                         kFontScale, cv::Scalar(0,255,0),
                          kTextThickness );
         else
             cv::putText( img_to_show_, "Ready to start recording",
-                         cv::Point(10,40), cv::FONT_HERSHEY_SIMPLEX, kFontScale,cv::Scalar(0,255,0),
-                         kTextThickness );
+                         cv::Point(10,40), cv::FONT_HERSHEY_SIMPLEX,
+                         kFontScale, cv::Scalar(0,255,0), kTextThickness );
     else
         cv::putText( img_to_show_, "Error: unknown state!",
                      cv::Point(10,40), cv::FONT_HERSHEY_SIMPLEX, kFontScale,cv::Scalar(0,0,255),

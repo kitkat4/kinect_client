@@ -74,7 +74,6 @@ public:
             setlocale( LC_ALL, "JPN" );
             time_t tmp_time = time( nullptr );
             // somehow this doesn't work correctly.
-            // 
             logfile_ << std::endl
                      << asctime( localtime( &tmp_time ) ); 
         }
@@ -90,6 +89,9 @@ public:
 
 class KinectManager{
 
+    typedef uint8_t color_ch_t;
+    typedef float depth_ch_t;
+    
 public:
     
     typedef enum{
@@ -203,20 +205,20 @@ private:
     
     static const int kBufSize = 600;
 
-    std::vector<uint8_t> color_buf_idle_;
-    std::vector<uint8_t> color_buf_[kBufSize];
-    std::vector<uint8_t> * current_frame_color_;
-    std::queue<std::vector<uint8_t> * > color_queue_;
-    std::vector<uint8_t>* volatile push_color_queue_;
+    std::vector<color_ch_t> color_buf_idle_;
+    std::vector<color_ch_t> color_buf_[kBufSize];
+    std::vector<color_ch_t> * current_frame_color_;
+    std::queue<std::vector<color_ch_t> * > color_queue_;
+    std::vector<color_ch_t>* volatile push_color_queue_;
     volatile bool pop_color_queue_;
     int fourcc_color_;
     int fps_color_;
 
-    std::vector<float> depth_buf_idle_;
-    std::vector<float> depth_buf_[kBufSize];
-    std::vector<float>* current_frame_depth_;
-    std::queue<std::vector<float> * > depth_queue_;
-    std::vector<float>* volatile push_depth_queue_;
+    std::vector<depth_ch_t> depth_buf_idle_;
+    std::vector<depth_ch_t> depth_buf_[kBufSize];
+    std::vector<depth_ch_t>* current_frame_depth_;
+    std::queue<std::vector<depth_ch_t> * > depth_queue_;
+    std::vector<depth_ch_t>* volatile push_depth_queue_;
     volatile bool pop_depth_queue_;
 
     
@@ -232,19 +234,23 @@ private:
     volatile uint32_t recorder_state_;
     volatile uint32_t recorder_mode_;
 
-    static const int kColorFrameWidth  = 1920;
-    static const int kColorFrameHeight = 1080;
-    static const int kColorBytesPerPixel = 4; // size of unsigned char * 4 (BGRX)
-    static const int kColorVecSize = kColorFrameWidth * kColorFrameHeight * kColorBytesPerPixel;
-    static const int kColorFrameSizeInBytes = kColorVecSize;
-    static const int kDepthFrameWidth  = 512;
-    static const int kDepthFrameHeight = 424;
-    static const int kDepthBytesPerPixel = 4; // size of float
-    static const int kDepthVecSize = kDepthFrameWidth * kDepthFrameHeight;
-    static const int kDepthFrameSizeInBytes = kDepthFrameWidth * kDepthFrameHeight * kDepthBytesPerPixel;
-    static const int kIrFrameWidth  = 512;
-    static const int kIrFrameHeight = 424;
-    static const int kIrBytesPerPixel = 4; // size of float
+    // color frame constants
+    static const int kCWidth  = 1920;
+    static const int kCHeight = 1080;
+    static const int kCNumOfPixels = kCWidth * kCHeight;
+    static const int kCNumOfChannelsPerPixel = 4; // BGRX
+    static const int kCNumOfChannels = kCNumOfPixels * kCNumOfChannelsPerPixel;
+    static const int kCNumOfBytesPerPixel = sizeof(color_ch_t) * kCNumOfChannelsPerPixel;
+    static const int kCNumOfBytes = kCNumOfBytesPerPixel * kCNumOfPixels;
+
+    // depth frame constants
+    static const int kDWidth  = 512;
+    static const int kDHeight = 424;
+    static const int kDNumOfPixels = kDWidth * kDHeight;
+    static const int kDNumOfChannelsPerPixel = 1;
+    static const int kDNumOfChannels = kDNumOfPixels * kDNumOfChannelsPerPixel;
+    static const int kDNumOfBytesPerPixel = sizeof(depth_ch_t) * kDNumOfChannelsPerPixel;
+    static const int kDNumOfBytes = kDNumOfBytesPerPixel * kDNumOfPixels;
 
     static const int kCornersWidth = 10; // chessboard
     static const int kCornersHeight = 7; 
