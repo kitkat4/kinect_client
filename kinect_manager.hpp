@@ -216,7 +216,7 @@ private:
     std::vector<float> depth_buf_[kBufSize];
     std::vector<float>* current_frame_depth_;
     std::queue<std::vector<float> * > depth_queue_;
-    bool std::vector<float>* volatile push_depth_queue_;
+    std::vector<float>* volatile push_depth_queue_;
     volatile bool pop_depth_queue_;
 
     

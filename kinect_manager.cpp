@@ -536,11 +536,11 @@ void KinectManager::update(){
 void KinectManager::updateQueue(){
     
     if( push_color_queue_ ){
-        color_queue_.push( current_frame_color_ );
+        color_queue_.push( const_cast<std::vector<uint8_t>*>( push_color_queue_ ) );
         push_color_queue_ = nullptr;
     }
     if( push_depth_queue_ ){
-        depth_queue_.push( current_frame_depth_ );
+        depth_queue_.push( const_cast<std::vector<float>*>( push_depth_queue_ ) );
         push_depth_queue_ = nullptr;
     }
     if( pop_color_queue_ && pop_depth_queue_ && ! color_queue_.empty() && ! depth_queue_.empty() ){
