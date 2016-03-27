@@ -32,11 +32,10 @@ KinectManager::KinectManager( const std::string& out_dir,
       fps_sync_loop_( 0.0 ),
       H_( cv::Mat::eye( 4, 4, CV_32F ) ),
       video_writer_for_main_thread_( nullptr ),
-      dir_path_for_main_thread_( nullptr ),
       server_ip_( server_ip ),
       server_port_( server_port ),
-      local_endpoint_calib_( boost::asio::ip::udp::endpoint( boost::asio::ip::udp::v4(), kLocalEndpointPortCalib ) ),
-      local_endpoint_sync_( boost::asio::ip::udp::endpoint( boost::asio::ip::udp::v4(), kLocalEndpointPortSync ) ),
+      local_endpoint_calib_( udp_t::endpoint( udp_t::v4(), kLocalEndpointPortCalib ) ),
+      local_endpoint_sync_( udp_t::endpoint( udp_t::v4(), kLocalEndpointPortSync ) ),
       key_(0),
       recorder_mode_(0),
       out_dir_( out_dir ),
@@ -46,15 +45,24 @@ KinectManager::KinectManager( const std::string& out_dir,
       logger_( (out_dir + "/" + log_file_name).c_str() ){
     
 
+    // whether this works as a client or a standalone program
     if( server_ip_ == "" || server_port_ == "" )
-        recorder_mode_ &= ~1; // manual
+        recorder_mode_ &= ~1; // standalone
     else
-        recorder_mode_ |= 1; // from server
-    
+        recorder_mode_ |= 1;  // client
+
+    // whether you specify each frame or start/stop
     if( specify_each_frame )
-        recorder_mode_ |= 2;
+        recorder_mode_ |= 2;  // specify each frame
     else
-        recorder_mode_ &= ~2;
+        recorder_mode_ &= ~2; // specify start/stop
+
+    // whether you save color frames as a video or a set of pictures
+    if( fps_color_video > 0.0 )
+        recorder_mode_ |= 4;  // video
+    else
+        recorder_mode_ &= ~4; // pictures
+
 }
 
 KinectManager::~KinectManager(){
@@ -93,23 +101,23 @@ void KinectManager::init(){
             return;
         }
 
-        listener_.reset( new libfreenect2::SyncMultiFrameListener( libfreenect2::Frame::Color |
-                                                                   libfreenect2::Frame::Depth |
-                                                                   libfreenect2::Frame::Ir ) );
+        listener_.reset( new libfreenect2::SyncMultiFrameListener( frame_t::Color |
+                                                                   frame_t::Depth |
+                                                                   frame_t::Ir ) );
 
         device_->setColorFrameListener( listener_.get() );
         device_->setIrAndDepthFrameListener( listener_.get() );
 
-        if( ! isManual() ){
+        if( ! isStandalone() ){
             if( server_ip_ == "" || server_ip_ == "" )
                 throw std::runtime_error("no valid ip/port");
 
-            boost::asio::ip::udp::resolver resolver(io_service_);
-            boost::asio::ip::udp::resolver::query query( boost::asio::ip::udp::v4(),
+            udp_t::resolver resolver(io_service_);
+            udp_t::resolver::query query( udp_t::v4(),
                                                          server_ip_, server_port_ );
             remote_endpoint_ = *resolver.resolve(query);
-            socket_calib_.reset( new boost::asio::ip::udp::socket( io_service_, local_endpoint_calib_ ) );
-            socket_sync_.reset(  new boost::asio::ip::udp::socket( io_service_, local_endpoint_sync_ ) );
+            socket_calib_.reset( new udp_t::socket( io_service_, local_endpoint_calib_ ) );
+            socket_sync_.reset(  new udp_t::socket( io_service_, local_endpoint_sync_ ) );
 
             socket_calib_->send_to( boost::asio::buffer( std::string("[Kinect] I am calibrator") ),
                                     remote_endpoint_ );
@@ -118,7 +126,7 @@ void KinectManager::init(){
         save_thread_ = std::thread( &KinectManager::save, this );
         update_thread_ = std::thread( &KinectManager::update, this );
 
-        if( ! isManual() )
+        if( ! isStandalone() )
             sync_thread_ = std::thread( &KinectManager::sync, this );
         
         // allocate memory in advance to avoid overhead
@@ -159,8 +167,8 @@ void KinectManager::startKinectAndCreateWindow(){
 
 void KinectManager::calibrate(){
 
-    static libfreenect2::Frame undistorted( kDWidth, kDHeight, kDNumOfBytesPerPixel );
-    static libfreenect2::Frame registered( kDWidth, kDHeight, kDNumOfBytesPerPixel );
+    static frame_t undistorted( kDWidth, kDHeight, kDNumOfBytesPerPixel );
+    static frame_t registered( kDWidth, kDHeight, kDNumOfBytesPerPixel );
     static cv::Mat registered_to_show;
 
     try{
@@ -169,10 +177,10 @@ void KinectManager::calibrate(){
         while( true ){
 
         
-            libfreenect2::Frame color_frame( kCWidth, kCHeight, kCNumOfBytesPerPixel,
-                                             reinterpret_cast<uint8_t*>(current_frame_color_->data()) );
-            libfreenect2::Frame depth_frame( kDWidth, kDHeight, kDNumOfBytesPerPixel,
-                                             reinterpret_cast<uint8_t*>(current_frame_depth_->data()) );
+            frame_t color_frame( kCWidth, kCHeight, kCNumOfBytesPerPixel,
+                                 reinterpret_cast<uint8_t*>(current_frame_color_->data()) );
+            frame_t depth_frame( kDWidth, kDHeight, kDNumOfBytesPerPixel,
+                                 reinterpret_cast<uint8_t*>(current_frame_depth_->data()) );
 
             registration_->apply( &color_frame, &depth_frame, &undistorted, &registered );
 
@@ -182,9 +190,12 @@ void KinectManager::calibrate(){
         
             registered_to_show = color_8UC3.clone();
         
-            if( cv::findChessboardCorners( color_8UC3, cv::Size( kCornersWidth, kCornersHeight ), corners,
-                                           CV_CALIB_CB_ADAPTIVE_THRESH + CV_CALIB_CB_NORMALIZE_IMAGE ) ){
-                drawChessboardCorners( registered_to_show, cv::Size( kCornersWidth, kCornersHeight ),
+            if( cv::findChessboardCorners( color_8UC3, cv::Size( kCornersWidth, kCornersHeight ),
+                                           corners,
+                                           CV_CALIB_CB_ADAPTIVE_THRESH +
+                                           CV_CALIB_CB_NORMALIZE_IMAGE ) ){
+                drawChessboardCorners( registered_to_show,
+                                       cv::Size( kCornersWidth, kCornersHeight ),
                                        cv::Mat(corners), true );
                                    
                 if( is( Calibrating ) )
@@ -231,8 +242,7 @@ void KinectManager::calibrate(){
             max_y = max_y >= corners[i].y ? max_y : corners[i].y;
         }
 
-        pcl::PointCloud<pcl::PointXYZ>::Ptr cloud( new pcl::PointCloud<pcl::PointXYZ>( max_x - min_x + 1,
-                                                                                       max_y - min_y + 1 ) );
+        cloud_t::Ptr cloud( new cloud_t( max_x - min_x + 1, max_y - min_y + 1 ) );
         for( int i_row = min_y; i_row <= max_y; i_row++ ){ // populate the cloud
             for( int i_col = min_x; i_col <= max_x; i_col++ ){
                 pcl::PointXYZ point;
@@ -378,23 +388,22 @@ void KinectManager::enterMainLoop(){
         if( is( Exiting ) )
             continue;
 
-        if( video_writer_for_main_thread_ && dir_path_for_main_thread_ ){
-            video_writer_for_main_thread_->open( *dir_path_for_main_thread_ + "/color.avi",
+        if( video_writer_for_main_thread_ ){
+            video_writer_for_main_thread_->open( scene_dir_ + "/color.avi",
                                                  fourcc_color_, fps_color_video_,
                                                  cv::Size( kCWidth, kCHeight ));
             video_writer_for_main_thread_ = nullptr;
-            dir_path_for_main_thread_ = nullptr;
         }
 
         if( is( WritingData ) && queuesAreEmpty() ){
             set( ReadyToRecord );
-            if( ! isManual() )
+            if( ! isStandalone() )
                 socket_sync_->send_to( boost::asio::buffer( std::string("[Kinect] ready")), remote_endpoint_ );
         }
 
         
         int key = cv::waitKey(1);
-        if( isManual() )
+        if( isStandalone() )
             key_ = key;
         if( key_ == 'q' ){
             set( Exiting );
@@ -420,7 +429,7 @@ void KinectManager::enterMainLoop(){
                 set( Recording );
             }
         }else if( key == 'r' ){ // this may not be used, but is implemented for debugging.
-            if( isManual() && specifyEachFrame() ){
+            if( isStandalone() && specifyEachFrame() ){
                 if( is( ReadyToRecord ) )
                     set( Recording );
                 saveCurrentFrame(); 
@@ -430,7 +439,7 @@ void KinectManager::enterMainLoop(){
         key_ = 0;
     }
 
-    if( ! isManual() ){
+    if( ! isStandalone() ){
         io_service_.stop();
         sync_thread_.join();
     }
@@ -464,11 +473,11 @@ void KinectManager::update(){
                 data_dst_depth = &depth_buf_idle_[0];
             }
 
-            std::copy( frames_[libfreenect2::Frame::Color]->data,
-                       frames_[libfreenect2::Frame::Color]->data + kCNumOfChannels,
+            std::copy( frames_[frame_t::Color]->data,
+                       frames_[frame_t::Color]->data + kCNumOfChannels,
                        data_dst_color );
-            std::copy( (depth_ch_t*)frames_[libfreenect2::Frame::Depth]->data,
-                       (depth_ch_t*)frames_[libfreenect2::Frame::Depth]->data + kDNumOfChannels,
+            std::copy( (depth_ch_t*)frames_[frame_t::Depth]->data,
+                       (depth_ch_t*)frames_[frame_t::Depth]->data + kDNumOfChannels,
                        data_dst_depth );
 
             cv::resize( cv::Mat( kCHeight, kCWidth,CV_8UC4,
@@ -502,7 +511,7 @@ void KinectManager::update(){
                     
                     if( high_fps_count == 3 ){
                         set( ReadyToRecord );
-                        if( ! isManual() )
+                        if( ! isStandalone() )
                             socket_sync_->send_to( boost::asio::buffer( std::string("[Kinect] ready")), remote_endpoint_ );
                     }
                 }
@@ -560,29 +569,29 @@ void KinectManager::save(){
                 continue;
             }
             
-            std::string scene_dir;
             { // create scene directory
                 for( int i = 1; ; i++ ){ // begin from 1 for the compatibility with Cortex.
                     std::stringstream sstream;
                     sstream << out_dir_ + "/" + motion_name_ << std::setw( kNumSetw ) << std::setfill('0') << i;
                     if( ! boost::filesystem::exists( boost::filesystem::path( sstream.str() ) ) ){
-                        scene_dir = sstream.str();
+                        scene_dir_ = sstream.str();
                         break;
                     }
                 }
-                boost::filesystem::create_directory( boost::filesystem::path( scene_dir ) );
+                boost::filesystem::create_directory( boost::filesystem::path( scene_dir_ ) );
             }
-            dir_path_for_main_thread_ = &scene_dir;
 
             // open video file
             cv::VideoWriter video_writer_color;
-            video_writer_for_main_thread_ = &video_writer_color;
-            { // wait for video_writer_color to be opened
+            if( saveAsVideo() ){
+                video_writer_for_main_thread_ = &video_writer_color;
+                // wait for video_writer_color to be opened
                 int count = 0;
                 while( video_writer_for_main_thread_ ){ 
                     std::this_thread::sleep_for( std::chrono::milliseconds( 1 ));
                     if( count++ > 5000 ){
-                        std::cerr << "error: failed to open " << scene_dir + "/color.avi" << std::endl;
+                        std::cerr << "error: failed to open " << scene_dir_ + "/color.avi"
+                                  << std::endl;
                         return;
                     }
                 }
@@ -593,11 +602,14 @@ void KinectManager::save(){
                 if( is( Exiting ) )
                     break;
                 std::stringstream sstream;
-                sstream << scene_dir + "/"
+                sstream << scene_dir_ + "/"
                         << std::setw( kNumSetw ) << std::setfill('0') << frame_count << ".pcd";
                 if( saveDepth( sstream.str() ) )
                     frame_count++;
-                saveColor( video_writer_color );
+                if( saveAsVideo() )
+                    saveColor( video_writer_color );
+                else
+                    saveColor();
             } // end of frame loop
             fps_pop_ = 0.0;
         } // end of scene loop
@@ -630,10 +642,43 @@ void KinectManager::saveColor( cv::VideoWriter& video_writer ){
     return;
 }
 
+void KinectManager::saveColor(){
+
+    if( pop_color_queue_ )
+        return;
+
+    if( color_queue_.empty() )
+        return;
+
+    if( color_queue_.front() == nullptr ){
+        pop_color_queue_ = true;
+        return;
+    }
+
+    static cv::Mat tmp_color_img;
+    cv::cvtColor( cv::Mat( kCHeight, kCWidth, CV_8UC4, &color_queue_.front()->front() ),
+                  tmp_color_img, CV_BGRA2BGR );
+    cv::flip( tmp_color_img, tmp_color_img, 1 ); // color images taken from kinect are mirrored
+
+    std::stringstream sstream;
+    for( int i=0;; i++ ){
+        sstream.str("");
+        sstream << scene_dir_ << "/color" << std::setw( kNumSetw ) << std::setfill('0') << i
+                << ".jpg";
+        if( ! boost::filesystem::exists( boost::filesystem::path( sstream.str() ) ) ){
+            cv::imwrite( sstream.str(), tmp_color_img );
+            break;
+        }
+    }
+    
+    pop_color_queue_ = true;
+    return;
+}
+
 bool KinectManager::saveDepth( const std::string& file_path ){
 
-    static libfreenect2::Frame undistorted( kDWidth, kDHeight, kDNumOfBytesPerPixel );
-    static libfreenect2::Frame registered( kDWidth, kDHeight, kDNumOfBytesPerPixel );
+    static frame_t undistorted( kDWidth, kDHeight, kDNumOfBytesPerPixel );
+    static frame_t registered( kDWidth, kDHeight, kDNumOfBytesPerPixel );
     
     if( pop_depth_queue_ )
         return false;
@@ -644,14 +689,14 @@ bool KinectManager::saveDepth( const std::string& file_path ){
         return false;
     }
 
-    libfreenect2::Frame color_frame( kCWidth, kCHeight, kCNumOfBytesPerPixel,
-                                     reinterpret_cast<uint8_t*>(&color_queue_.front()->at(0)) );
-    libfreenect2::Frame depth_frame( kDWidth, kDHeight, kDNumOfBytesPerPixel,
-                                     reinterpret_cast<uint8_t*>(&depth_queue_.front()->at(0)) );
+    frame_t color_frame( kCWidth, kCHeight, kCNumOfBytesPerPixel,
+                         reinterpret_cast<uint8_t*>(&color_queue_.front()->at(0)) );
+    frame_t depth_frame( kDWidth, kDHeight, kDNumOfBytesPerPixel,
+                         reinterpret_cast<uint8_t*>(&depth_queue_.front()->at(0)) );
 
     registration_->apply( &color_frame, &depth_frame, &undistorted, &registered );
 
-    pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud( new pcl::PointCloud<pcl::PointXYZRGB> );
+    cloudRGB_t::Ptr cloud( new cloudRGB_t );
 
     float rgb_buf;
     for( int i_row = 0; i_row < kDHeight; i_row++ ){
@@ -774,7 +819,7 @@ void KinectManager::showImgAndInfo(){
     std::stringstream sstream;
 
     if( is( Recording ) )
-        if( isManual() && ! specifyEachFrame() )
+        if( isStandalone() && ! specifyEachFrame() )
             cv::putText( img_to_show_, "Recording ( s: stop recording, q: abort )" ,
                          cv::Point(10,40), cv::FONT_HERSHEY_SIMPLEX,
                          kFontScale, cv::Scalar(0,0,255), kTextThickness );
@@ -783,7 +828,7 @@ void KinectManager::showImgAndInfo(){
                          cv::FONT_HERSHEY_SIMPLEX, kFontScale,
                          cv::Scalar(0,0,255), kTextThickness );
     else if( is( ReadyToCalibrate ) )
-        if( isManual() )
+        if( isStandalone() )
             cv::putText( img_to_show_,
                          "Ready to start calibration ( s: start calibration, c: recorder mode, q: abort )",
                          cv::Point(10,40), cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0,255,255),
@@ -796,7 +841,7 @@ void KinectManager::showImgAndInfo(){
         cv::putText( img_to_show_, "Not Ready", cv::Point(10,40),
                      cv::FONT_HERSHEY_SIMPLEX, kFontScale, cv::Scalar(0,100,255), kTextThickness );
     else if( is( Calibrating ) )
-        if( isManual() )
+        if( isStandalone() )
             cv::putText( img_to_show_, "Calibrating ( q: abort )", cv::Point(10,40),
                          cv::FONT_HERSHEY_SIMPLEX, kFontScale, cv::Scalar(0,100,255),
                          kTextThickness );
@@ -805,7 +850,7 @@ void KinectManager::showImgAndInfo(){
                          cv::FONT_HERSHEY_SIMPLEX, kFontScale,
                          cv::Scalar(0,100,255), kTextThickness );
     else if( is( WritingData ) )
-        if( isManual() && ! specifyEachFrame() )
+        if( isStandalone() && ! specifyEachFrame() )
             cv::putText( img_to_show_, "Writing files... ( q: abort )" , cv::Point(10,40),
                          cv::FONT_HERSHEY_SIMPLEX, kFontScale,
                          cv::Scalar(0,100,255), kTextThickness );
@@ -813,7 +858,7 @@ void KinectManager::showImgAndInfo(){
             cv::putText( img_to_show_, "Writing files..." , cv::Point(10,40),
                          cv::FONT_HERSHEY_SIMPLEX, kFontScale, cv::Scalar(0,100,255), kTextThickness );
     else if( is( ReadyToRecord ) )
-        if( isManual() && ! specifyEachFrame() )
+        if( isStandalone() && ! specifyEachFrame() )
             cv::putText( img_to_show_,
                          "Ready to start recording ( s: start recording, c: calib mode, q: quit )",
                          cv::Point(10,40), cv::FONT_HERSHEY_SIMPLEX,

@@ -73,7 +73,6 @@ public:
         if( good() ){
             setlocale( LC_ALL, "JPN" );
             time_t tmp_time = time( nullptr );
-            // somehow this doesn't work correctly.
             logfile_ << std::endl
                      << asctime( localtime( &tmp_time ) ); 
         }
@@ -89,10 +88,12 @@ public:
 
 class KinectManager{
 
-    typedef uint8_t color_ch_t;
-    typedef float depth_ch_t;
-    
-
+    typedef uint8_t color_ch_t; // channel type of color frame
+    typedef float depth_ch_t;   // channel type of depth frame
+    typedef libfreenect2::Frame frame_t;
+    typedef boost::asio::ip::udp udp_t;
+    typedef pcl::PointCloud<pcl::PointXYZ> cloud_t;
+    typedef pcl::PointCloud<pcl::PointXYZRGB> cloudRGB_t;
     
 public:
     
@@ -153,7 +154,9 @@ private:
     void update();
     void updateQueue();
     void save();
-    void saveColor( cv::VideoWriter& video_writer );
+
+    void saveColor( cv::VideoWriter& video_writer ); // when save color frames as a video file
+    void saveColor(); // when save color frames as pictures
     bool saveDepth( const std::string& file_path );
     void sync();
     void processRecvBuf( const std::vector<char>* buf, // somehow buf as reference doesn't work
@@ -162,9 +165,11 @@ private:
     void showImgAndInfo();
     bool is( const uint32_t state )const{ return recorder_state_ == state; }
     void set( const uint32_t state ){ recorder_state_ = state; }
-    bool isManual()const{ return (recorder_mode_ & 1) == 0; }
+    bool isStandalone()const{ return (recorder_mode_ & 1) == 0; }
     bool specifyEachFrame()const{ return (recorder_mode_ & 2) == 2; }
+    bool saveAsVideo()const{ return (recorder_mode_ & 4) == 4; }
     bool queuesAreEmpty()const{ return color_queue_.empty() && depth_queue_.empty(); }
+
     // project src onto plane ax+by+cz+d=0
     pcl::PointXYZ project( const float a, const float b, const float c, const float d,
                            const pcl::PointXYZ& src )const{
@@ -220,6 +225,7 @@ private:
     std::unique_ptr<libfreenect2::Registration> registration_;
 
     std::string out_dir_;
+    std::string scene_dir_;
     std::string motion_name_;
     
     static const int kBufSize = 600;
@@ -243,9 +249,8 @@ private:
     cv::Mat img_to_show_;
     cv::Mat1f H_; // homogenous transformation matrix
 
-    // open video file from main thread via these pointers: opening one from child threads may fail.
+    // open video file from main thread via this pointers: opening one from child threads may fail.
     cv::VideoWriter* volatile video_writer_for_main_thread_;
-    std::string* volatile dir_path_for_main_thread_;
 
     std::string server_ip_, server_port_;
     
@@ -296,19 +301,18 @@ private:
     
     // used when synchronizing with server is needed 
     std::thread sync_thread_;
-    boost::asio::ip::udp::endpoint remote_endpoint_;
-    boost::asio::ip::udp::endpoint local_endpoint_sync_;
-    boost::asio::ip::udp::endpoint local_endpoint_calib_;
+    udp_t::endpoint remote_endpoint_;
+    udp_t::endpoint local_endpoint_sync_;
+    udp_t::endpoint local_endpoint_calib_;
     // Declaration of io_service_ should be prior to that of sockets.
     // This order of declaration affects destruction order and prevents segmentation fault.
     boost::asio::io_service io_service_; 
-    std::unique_ptr<boost::asio::ip::udp::socket> socket_calib_;
-    std::unique_ptr<boost::asio::ip::udp::socket> socket_sync_;
+    std::unique_ptr<udp_t::socket> socket_calib_;
+    std::unique_ptr<udp_t::socket> socket_sync_;
     static const uint16_t kLocalEndpointPortSync  = 49998;
     static const uint16_t kLocalEndpointPortCalib = 49999;
 
     volatile int key_;
-
 
 };
 
