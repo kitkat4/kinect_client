@@ -158,6 +158,7 @@ private:
     bool saveColor( cv::VideoWriter& video_writer ); // when save color frames as a video file
     bool saveColor(); // when save color frames as pictures
     bool saveDepth( const std::string& file_path );
+    void saveDepthForAnotherThread();
     void sync();
     void processRecvBuf( const std::vector<char>* buf, // somehow buf as reference doesn't work
                          const boost::system::error_code& error,

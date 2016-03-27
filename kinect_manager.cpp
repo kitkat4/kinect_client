@@ -598,24 +598,25 @@ void KinectManager::save(){
             }
 
             int frame_count = 0;
+
+
+            std::thread save_depth_thread( &KinectManager::saveDepthForAnotherThread, this );
+            
             while( is( Recording ) || ! queuesAreEmpty() ){ // frame loop
                 if( is( Exiting ) )
                     break;
-                static std::stringstream sstream;
-                sstream.str("");
-                sstream << scene_dir_ + "/"
-                        << std::setw( kNumSetw ) << std::setfill('0') << frame_count << ".pcd";
-                static bool saved_something;
 
-                saved_something = saveDepth( sstream.str() );
+                if( saveAsVideo() ){
+                    if( saveColor( video_writer_color ) )
+                        frame_count++;
+                }else
+                    if( saveColor() )
+                        frame_count++;
 
-                if( saveAsVideo() )
-                    saved_something |= saveColor( video_writer_color );
-                else
-                    saved_something |= saveColor();
-                if( saved_something )
-                    frame_count++;                
             } // end of frame loop
+
+            save_depth_thread.join();
+            
             fps_pop_ = 0.0;
         } // end of scene loop
     }catch( std::exception& ex ){
@@ -623,6 +624,7 @@ void KinectManager::save(){
         throw;
     }
 }
+
 
 bool KinectManager::saveColor( cv::VideoWriter& video_writer ){
 
@@ -733,6 +735,22 @@ bool KinectManager::saveDepth( const std::string& file_path ){
     pcl::io::savePCDFileBinary<pcl::PointXYZRGB>( file_path, *cloud );
     pop_depth_queue_ = true;
     return true;
+}
+
+void KinectManager::saveDepthForAnotherThread(){
+
+    int frame_count = 0;
+    while( is( Recording ) || ! queuesAreEmpty() ){ // frame loop
+        if( is( Exiting ) )
+            break;
+        static std::stringstream sstream;
+        sstream.str("");
+        sstream << scene_dir_ + "/"
+                << std::setw( kNumSetw ) << std::setfill('0') << frame_count << ".pcd";
+
+        if( saveDepth( sstream.str() ) )
+            frame_count++;                
+    } // end of frame loop
 }
 
 void KinectManager::sync(){
