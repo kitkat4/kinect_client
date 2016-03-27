@@ -12,8 +12,9 @@ KinectManager::KinectManager( const std::string& out_dir,
                               const std::string& server_ip,
                               const std::string& server_port,
                               const bool specify_each_frame,
+                              const int fps_save,
+                              const double fps_color_video,
                               const std::string& log_file_name,
-                              const double fps_color,
                               const int fourcc_color )
     : device_( nullptr ),
       motion_name_( "scene" ),
@@ -24,11 +25,11 @@ KinectManager::KinectManager( const std::string& out_dir,
       push_depth_queue_( nullptr ),
       pop_color_queue_( false ),
       pop_depth_queue_( false ),
-      fps_update_( 0.0 ),
+      fps_update_loop_( 0.0 ),
       fps_push_( 0.0 ),
       fps_pop_( 0.0 ),
-      fps_main_( 0.0 ),
-      fps_sync_( 0.0 ),
+      fps_main_loop_( 0.0 ),
+      fps_sync_loop_( 0.0 ),
       H_( cv::Mat::eye( 4, 4, CV_32F ) ),
       video_writer_for_main_thread_( nullptr ),
       dir_path_for_main_thread_( nullptr ),
@@ -39,7 +40,8 @@ KinectManager::KinectManager( const std::string& out_dir,
       key_(0),
       recorder_mode_(0),
       out_dir_( out_dir ),
-      fps_color_( fps_color ),
+      fps_save_( fps_save <= kKinectIdealFps ? fps_save : kKinectIdealFps ),
+      fps_color_video_( fps_color_video ),
       fourcc_color_( fourcc_color ),
       logger_( (out_dir + "/" + log_file_name).c_str() ){
     
@@ -362,28 +364,12 @@ void KinectManager::calibrate(){
 }
 
 
-    
-void KinectManager::saveCurrentFrame(){
-    
-    if( push_color_queue_ )
-        std::cerr << "warning: a color frame to be saved has been lost ("
-                  << __func__ << ")." << std::endl;
-    else
-        push_color_queue_ = current_frame_color_;
-    
-    if( push_depth_queue_ )
-        std::cerr << "warning: a depth frame to be saved has been lost ("
-                  << __func__ << ")." << std::endl;
-    else
-        push_depth_queue_ = current_frame_depth_;
-}
-
 void KinectManager::enterMainLoop(){
 
     while( ! is( Exiting ) ){
 
         static FpsCalculator fps_calc( 30 );
-        fps_main_ = fps_calc.fps();
+        fps_main_loop_ = fps_calc.fps();
         
         showImgAndInfo();
         
@@ -394,7 +380,7 @@ void KinectManager::enterMainLoop(){
 
         if( video_writer_for_main_thread_ && dir_path_for_main_thread_ ){
             video_writer_for_main_thread_->open( *dir_path_for_main_thread_ + "/color.avi",
-                                                 fourcc_color_, fps_color_,
+                                                 fourcc_color_, fps_color_video_,
                                                  cv::Size( kCWidth, kCHeight ));
             video_writer_for_main_thread_ = nullptr;
             dir_path_for_main_thread_ = nullptr;
@@ -464,14 +450,15 @@ void KinectManager::update(){
 
         while( ! is( WaitingForFpsStabilized ) && ! is( ReadyToRecord ) )
             std::this_thread::sleep_for( std::chrono::milliseconds( 10 ) );
-        
+
+        uint64_t loop_count = 0;
         while( ! is( Exiting ) ){
 
             listener_->waitForNewFrame( frames_ );
 
             if( is( Recording ) ){
-                data_dst_color = &color_buf_[buf_index][0];
-                data_dst_depth = &depth_buf_[buf_index][0];
+                data_dst_color = &color_buf_[ buf_index ][0];
+                data_dst_depth = &depth_buf_[ buf_index ][0];
             }else{
                 data_dst_color = &color_buf_idle_[0];
                 data_dst_depth = &depth_buf_idle_[0];
@@ -503,12 +490,12 @@ void KinectManager::update(){
 
             static FpsCalculator fps_calc( 30 );
             
-            if( fps_calc.fps( fps_update_ ) ){
+            if( fps_calc.fps( fps_update_loop_ ) ){
                 if( is( WaitingForFpsStabilized ) ){
                     
                     static int high_fps_count = 0;
                     
-                    if( fps_update_ >= 29.0 )
+                    if( fps_update_loop_ >= 29.0 )
                         high_fps_count++;
                     else
                         high_fps_count = 0;
@@ -521,11 +508,13 @@ void KinectManager::update(){
                 }
             }
             
-            if( ! specifyEachFrame() && is( Recording ) ){
+            if( ! specifyEachFrame() && is( Recording ) && notToBeThinnedOut( loop_count ) ){
                 saveCurrentFrame();
-                fps_push_ = fps_update_;
+                static FpsCalculator fps_calc_push( fps_save_ );
+                fps_push_ = fps_calc_push.fps();
             }
 
+            loop_count++;
         }
     }catch( std::exception& ex ){
         std::cerr << "error in " << __func__ << ": " << ex.what() << std::endl;
@@ -707,7 +696,7 @@ void KinectManager::sync(){
         while( ! is( Exiting ) ){
 
             static FpsCalculator fps_calc( 30 );
-            fps_sync_ = fps_calc.fps();
+            fps_sync_loop_ = fps_calc.fps();
             
             io_service_.reset();
             
@@ -840,7 +829,7 @@ void KinectManager::showImgAndInfo(){
                      kTextThickness );
         
 
-    sstream << std::fixed << std::setprecision(3) << fps_update_ ;
+    sstream << std::fixed << std::setprecision(3) << fps_update_loop_ ;
     cv::putText( img_to_show_, "update: " + sstream.str() + " fps", cv::Point(10,100),
                  cv::FONT_HERSHEY_SIMPLEX, kFontScale, cv::Scalar(255,255,0), kTextThickness );
     sstream.str("");
@@ -852,11 +841,11 @@ void KinectManager::showImgAndInfo(){
     cv::putText( img_to_show_, "pop   : " + sstream.str() + " fps", cv::Point(10,160),
                  cv::FONT_HERSHEY_SIMPLEX, kFontScale, cv::Scalar(255,255,0), kTextThickness );
     sstream.str("");
-    sstream << std::fixed << std::setprecision(3) << fps_main_;
+    sstream << std::fixed << std::setprecision(3) << fps_main_loop_;
     cv::putText( img_to_show_, "main  : " + sstream.str() + " fps", cv::Point(10,190),
                  cv::FONT_HERSHEY_SIMPLEX, kFontScale, cv::Scalar(255,255,0), kTextThickness );
     sstream.str("");
-    sstream << std::fixed << std::setprecision(3) << fps_sync_;
+    sstream << std::fixed << std::setprecision(3) << fps_sync_loop_;
     cv::putText( img_to_show_, "sync  : " + sstream.str() + " fps", cv::Point(10,220),
                  cv::FONT_HERSHEY_SIMPLEX, kFontScale, cv::Scalar(255,255,0), kTextThickness );
 

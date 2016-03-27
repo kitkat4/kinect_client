@@ -92,14 +92,9 @@ class KinectManager{
     typedef uint8_t color_ch_t;
     typedef float depth_ch_t;
     
-public:
+
     
-    typedef enum{
-        SpecifyTimePeriodManually = 0,
-        SpecifyTimePeriodFromServer = 1,
-        SpecifyEachFrameManually = 2,
-        SpecifyEachFrameFromServer = 3,
-    }RecorderMode;
+public:
     
     typedef enum{
         InitialState,
@@ -117,8 +112,9 @@ public:
                    const std::string& server_ip = "",
                    const std::string& server_port = "",
                    const bool specify_each_frame = false,
+                   const int save_fps = kKinectIdealFps,
+                   const double fps_color_video = 29.97,
                    const std::string& log_file_name = "kinect.log",
-                   const double fps_color = 29.97,
                    const int fourcc_color = CV_FOURCC( 'M', 'J', 'P', 'G' ) );
     ~KinectManager();
 
@@ -131,7 +127,25 @@ public:
         set( Exiting );
     }
     
-    void saveCurrentFrame();
+
+    void saveCurrentColorFrame(){
+        if( push_color_queue_ )
+            std::cerr << "warning: a color frame to be saved has been lost ("
+                      << __func__ << ")." << std::endl;
+        else
+            push_color_queue_ = current_frame_color_;
+    }
+    void saveCurrentDepthFrame(){
+        if( push_depth_queue_ )
+            std::cerr << "warning: a depth frame to be saved has been lost ("
+                      << __func__ << ")." << std::endl;
+        else
+            push_depth_queue_ = current_frame_depth_;
+    }
+    void saveCurrentFrame(){
+        saveCurrentColorFrame();
+        saveCurrentDepthFrame();
+    }
 
     void enterMainLoop();
     
@@ -146,7 +160,7 @@ private:
                          const boost::system::error_code& error,
                          const std::size_t size );
     void showImgAndInfo();
-    bool is( const uint32_t state ){ return recorder_state_ == state; }
+    bool is( const uint32_t state )const{ return recorder_state_ == state; }
     void set( const uint32_t state ){ recorder_state_ = state; }
     bool isManual()const{ return (recorder_mode_ & 1) == 0; }
     bool specifyEachFrame()const{ return (recorder_mode_ & 2) == 2; }
@@ -157,6 +171,11 @@ private:
         return pcl::PointXYZ( - src.x * d / ( a*src.x + b*src.y + c*src.z ),
                               - src.y * d / ( a*src.x + b*src.y + c*src.z ),
                               - src.z * d / ( a*src.x + b*src.y + c*src.z ) );
+    }
+
+    // to thin out frames according to fps_save_
+    bool notToBeThinnedOut( const uint64_t frame_count )const{
+        return ( frame_count * fps_save_ ) % kKinectIdealFps < fps_save_;
     }
 
     class FpsCalculator{
@@ -212,7 +231,7 @@ private:
     std::vector<color_ch_t>* volatile push_color_queue_;
     volatile bool pop_color_queue_;
     int fourcc_color_;
-    int fps_color_;
+    double fps_color_video_;
 
     std::vector<depth_ch_t> depth_buf_idle_;
     std::vector<depth_ch_t> depth_buf_[kBufSize];
@@ -220,7 +239,6 @@ private:
     std::queue<std::vector<depth_ch_t> * > depth_queue_;
     std::vector<depth_ch_t>* volatile push_depth_queue_;
     volatile bool pop_depth_queue_;
-
     
     cv::Mat img_to_show_;
     cv::Mat1f H_; // homogenous transformation matrix
@@ -252,7 +270,8 @@ private:
     static const int kDNumOfBytesPerPixel = sizeof(depth_ch_t) * kDNumOfChannelsPerPixel;
     static const int kDNumOfBytes = kDNumOfBytesPerPixel * kDNumOfPixels;
 
-    static const int kCornersWidth = 10; // chessboard
+    // chessboard constants
+    static const int kCornersWidth = 10; 
     static const int kCornersHeight = 7; 
 
     static const int kTextThickness = 2;
@@ -262,12 +281,15 @@ private:
 
     static const int kNumSetw = 5;
 
+    static const int kKinectIdealFps = 30;
 
-    volatile double fps_update_;
+    const int fps_save_;
+    
+    volatile double fps_update_loop_;
     volatile double fps_push_;
     volatile double fps_pop_;
-    volatile double fps_main_;
-    volatile double fps_sync_;
+    volatile double fps_main_loop_;
+    volatile double fps_sync_loop_;
 
     std::thread save_thread_;
     std::thread update_thread_;
