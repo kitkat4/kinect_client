@@ -601,15 +601,20 @@ void KinectManager::save(){
             while( is( Recording ) || ! queuesAreEmpty() ){ // frame loop
                 if( is( Exiting ) )
                     break;
-                std::stringstream sstream;
+                static std::stringstream sstream;
+                sstream.str("");
                 sstream << scene_dir_ + "/"
                         << std::setw( kNumSetw ) << std::setfill('0') << frame_count << ".pcd";
-                if( saveDepth( sstream.str() ) )
-                    frame_count++;
+                static bool saved_something;
+
+                saved_something = saveDepth( sstream.str() );
+
                 if( saveAsVideo() )
-                    saveColor( video_writer_color );
+                    saved_something |= saveColor( video_writer_color );
                 else
-                    saveColor();
+                    saved_something |= saveColor();
+                if( saved_something )
+                    frame_count++;                
             } // end of frame loop
             fps_pop_ = 0.0;
         } // end of scene loop
@@ -619,17 +624,17 @@ void KinectManager::save(){
     }
 }
 
-void KinectManager::saveColor( cv::VideoWriter& video_writer ){
+bool KinectManager::saveColor( cv::VideoWriter& video_writer ){
 
     if( pop_color_queue_ )
-        return;
+        return false;
 
     if( color_queue_.empty() )
-        return;
+        return false;
 
     if( color_queue_.front() == nullptr ){
         pop_color_queue_ = true;
-        return;
+        return false;
     }
 
     static cv::Mat tmp_color_img;
@@ -639,20 +644,20 @@ void KinectManager::saveColor( cv::VideoWriter& video_writer ){
     video_writer << tmp_color_img;
     
     pop_color_queue_ = true;
-    return;
+    return true;
 }
 
-void KinectManager::saveColor(){
+bool KinectManager::saveColor(){
 
     if( pop_color_queue_ )
-        return;
+        return false;
 
     if( color_queue_.empty() )
-        return;
+        return false;
 
     if( color_queue_.front() == nullptr ){
         pop_color_queue_ = true;
-        return;
+        return false;
     }
 
     static cv::Mat tmp_color_img;
@@ -672,7 +677,7 @@ void KinectManager::saveColor(){
     }
     
     pop_color_queue_ = true;
-    return;
+    return true;
 }
 
 bool KinectManager::saveDepth( const std::string& file_path ){

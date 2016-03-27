@@ -155,8 +155,8 @@ private:
     void updateQueue();
     void save();
 
-    void saveColor( cv::VideoWriter& video_writer ); // when save color frames as a video file
-    void saveColor(); // when save color frames as pictures
+    bool saveColor( cv::VideoWriter& video_writer ); // when save color frames as a video file
+    bool saveColor(); // when save color frames as pictures
     bool saveDepth( const std::string& file_path );
     void sync();
     void processRecvBuf( const std::vector<char>* buf, // somehow buf as reference doesn't work
