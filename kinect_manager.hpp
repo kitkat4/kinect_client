@@ -285,7 +285,7 @@ private:
     
     static const double kResizeScale;
 
-    static const int kNumSetw = 5;
+    static const int kNumSetw = 8;
 
     static const int kKinectIdealFps = 30;
 
