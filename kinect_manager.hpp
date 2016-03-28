@@ -164,6 +164,27 @@ private:
                          const boost::system::error_code& error,
                          const std::size_t size );
     void showImgAndInfo();
+    void putText( cv::Mat& img, const std::string& text, const bool newline = true,
+                  const cv::Scalar& color = kSkyBlue,
+                  const cv::Point& org = cv::Point(-1,-1) )const;
+    void putText( cv::Mat& img, const std::string& text, const bool newline,
+                  const cv::Point& org )const{
+        putText( img ,text, newline, kSkyBlue, org );
+    };
+
+    std::string toString( const volatile double value ){
+        static std::stringstream sstream;
+        sstream.str("");
+        sstream << std::fixed << std::setprecision(3) << value;
+        return sstream.str();
+    }
+    std::string toString( const volatile int value ){
+        static std::stringstream sstream;
+        sstream.str("");
+        sstream << value;
+        return sstream.str();
+    }
+
     bool is( const uint32_t state )const{ return recorder_state_ == state; }
     void set( const uint32_t state ){ recorder_state_ = state; }
     bool isStandalone()const{ return (recorder_mode_ & 1) == 0; }
@@ -280,14 +301,18 @@ private:
     static const int kCornersWidth = 10; 
     static const int kCornersHeight = 7; 
 
+    // constants for puttext
     static const int kTextThickness = 2;
     static const double kFontScale;
+    static const cv::Scalar kRed, kGreen, kBlue, kOrange, kYellow, kSkyBlue;
     
     static const double kResizeScale;
 
     static const int kNumSetw = 8;
 
     static const int kKinectIdealFps = 30;
+
+
 
     const int fps_save_;
     

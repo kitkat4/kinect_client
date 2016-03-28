@@ -297,8 +297,8 @@ void KinectManager::calibrate(){
                                                p1.x, p1.y, p1.z, rgb_buf );
                 p1.y *= -1;
                 registration_->getPointXYZRGB( &undistorted, &registered,
-                                               corners[ i_row * kCornersWidth + kCornersWidth - 1 ].y,
-                                               corners[ i_row * kCornersWidth + kCornersWidth - 1 ].x,
+                                               corners[i_row * kCornersWidth + kCornersWidth - 1].y,
+                                               corners[i_row * kCornersWidth + kCornersWidth - 1].x,
                                                p2.x, p2.y, p2.z, rgb_buf );
                 p2.y *= -1;
                 pcl::PointXYZ projected1 = project( a, b, c, d, p1 ), projected2 = project( a, b, c, d, p2 );
@@ -843,80 +843,47 @@ void KinectManager::showImgAndInfo(){
 
     if( is( Recording ) )
         if( isStandalone() && ! specifyEachFrame() )
-            cv::putText( img_to_show_, "Recording ( s: stop recording, q: abort )" ,
-                         cv::Point(10,40), cv::FONT_HERSHEY_SIMPLEX,
-                         kFontScale, cv::Scalar(0,0,255), kTextThickness );
+            putText( img_to_show_, "Recording ( s: stop recording, q: abort )", false, kRed, cv::Point(10,40) );
         else
-            cv::putText( img_to_show_, "Recording" , cv::Point(10,40),
-                         cv::FONT_HERSHEY_SIMPLEX, kFontScale,
-                         cv::Scalar(0,0,255), kTextThickness );
+            putText( img_to_show_, "Recording", false, kRed, cv::Point(10,40) );
     else if( is( ReadyToCalibrate ) )
         if( isStandalone() )
-            cv::putText( img_to_show_,
-                         "Ready to start calibration ( s: start calibration, c: recorder mode, q: abort )",
-                         cv::Point(10,40), cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0,255,255),
-                         kTextThickness );
+            putText( img_to_show_,
+                     "Ready to start calibration (s: start calibration, c: recorder mode, q: abort)", false, kYellow, cv::Point(10,40) );
         else
-            cv::putText( img_to_show_, "Ready to start calibration",
-                         cv::Point(10,40), cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0,255,255),
-                         kTextThickness );
+            putText( img_to_show_, "Ready to start calibration", false, kYellow, cv::Point(10,40));
     else if( is( WaitingForFpsStabilized ) )
-        cv::putText( img_to_show_, "Not Ready", cv::Point(10,40),
-                     cv::FONT_HERSHEY_SIMPLEX, kFontScale, cv::Scalar(0,100,255), kTextThickness );
+        putText( img_to_show_, "Not Ready", false, kOrange, cv::Point(10,40) );
     else if( is( Calibrating ) )
         if( isStandalone() )
-            cv::putText( img_to_show_, "Calibrating ( q: abort )", cv::Point(10,40),
-                         cv::FONT_HERSHEY_SIMPLEX, kFontScale, cv::Scalar(0,100,255),
-                         kTextThickness );
+            putText( img_to_show_, "Calibrating ( q: abort )", false, kOrange, cv::Point(10,40) );
         else
-            cv::putText( img_to_show_, "Calibrating", cv::Point(10,40),
-                         cv::FONT_HERSHEY_SIMPLEX, kFontScale,
-                         cv::Scalar(0,100,255), kTextThickness );
+            putText( img_to_show_, "Calibrating", false, kOrange, cv::Point(10,40) );
     else if( is( WritingData ) )
         if( isStandalone() && ! specifyEachFrame() )
-            cv::putText( img_to_show_, "Writing files... ( q: abort )" , cv::Point(10,40),
-                         cv::FONT_HERSHEY_SIMPLEX, kFontScale,
-                         cv::Scalar(0,100,255), kTextThickness );
+            putText( img_to_show_, "Writing files... ( q: abort )", false, kOrange, cv::Point(10,40) );
         else
-            cv::putText( img_to_show_, "Writing files..." , cv::Point(10,40),
-                         cv::FONT_HERSHEY_SIMPLEX, kFontScale, cv::Scalar(0,100,255), kTextThickness );
+            putText( img_to_show_, "Writing files..." , false, kOrange, cv::Point(10,40) );
     else if( is( ReadyToRecord ) )
         if( isStandalone() && ! specifyEachFrame() )
-            cv::putText( img_to_show_,
-                         "Ready to start recording ( s: start recording, c: calib mode, q: quit )",
-                         cv::Point(10,40), cv::FONT_HERSHEY_SIMPLEX,
-                         kFontScale, cv::Scalar(0,255,0),
-                         kTextThickness );
+            putText( img_to_show_,
+                     "Ready to start recording ( s: start recording, c: calib mode, q: quit )",
+                     false, kGreen, cv::Point(10,40) );
         else
-            cv::putText( img_to_show_, "Ready to start recording",
-                         cv::Point(10,40), cv::FONT_HERSHEY_SIMPLEX,
-                         kFontScale, cv::Scalar(0,255,0), kTextThickness );
+            putText( img_to_show_, "Ready to start recording", false, kGreen, cv::Point(10,40) );
     else
-        cv::putText( img_to_show_, "Error: unknown state!",
-                     cv::Point(10,40), cv::FONT_HERSHEY_SIMPLEX, kFontScale,cv::Scalar(0,0,255),
-                     kTextThickness );
+        putText( img_to_show_, "Error: unknown state!", false, kRed, cv::Point(10,40) );
         
-
-    sstream << std::fixed << std::setprecision(3) << fps_update_loop_ ;
-    cv::putText( img_to_show_, "update: " + sstream.str() + " fps", cv::Point(10,100),
-                 cv::FONT_HERSHEY_SIMPLEX, kFontScale, cv::Scalar(255,255,0), kTextThickness );
-    sstream.str("");
-    sstream << std::fixed << std::setprecision(3) << fps_push_;
-    cv::putText( img_to_show_, "push  : " + sstream.str() + " fps", cv::Point(10,130),
-                 cv::FONT_HERSHEY_SIMPLEX, kFontScale, cv::Scalar(255,255,0), kTextThickness );
-    sstream.str("");
-    sstream << std::fixed << std::setprecision(3) << fps_pop_;
-    cv::putText( img_to_show_, "pop   : " + sstream.str() + " fps", cv::Point(10,160),
-                 cv::FONT_HERSHEY_SIMPLEX, kFontScale, cv::Scalar(255,255,0), kTextThickness );
-    sstream.str("");
-    sstream << std::fixed << std::setprecision(3) << fps_main_loop_;
-    cv::putText( img_to_show_, "main  : " + sstream.str() + " fps", cv::Point(10,190),
-                 cv::FONT_HERSHEY_SIMPLEX, kFontScale, cv::Scalar(255,255,0), kTextThickness );
-    sstream.str("");
-    sstream << std::fixed << std::setprecision(3) << fps_sync_loop_;
-    cv::putText( img_to_show_, "sync  : " + sstream.str() + " fps", cv::Point(10,220),
-                 cv::FONT_HERSHEY_SIMPLEX, kFontScale, cv::Scalar(255,255,0), kTextThickness );
-
+    putText( img_to_show_, "update fps:" );
+    putText( img_to_show_, toString( fps_update_loop_ ), false, cv::Point(220, -1) );
+    putText( img_to_show_, "push fps:" );
+    putText( img_to_show_, toString( fps_push_ ), false, cv::Point(220, -1) );
+    putText( img_to_show_, "pop fps:" );
+    putText( img_to_show_, toString( fps_pop_ ), false, cv::Point(220, -1) );
+    putText( img_to_show_, "main loop fps:" );
+    putText( img_to_show_, toString( fps_main_loop_ ), false, cv::Point(220, -1) );
+    putText( img_to_show_, "sync fps:" );
+    putText( img_to_show_, toString( fps_sync_loop_ ), false, cv::Point(220, -1) );
     
     int left_color_queue_size = kBufSize - color_queue_.size();
     int left_depth_queue_size = kBufSize - depth_queue_.size();
@@ -925,24 +892,33 @@ void KinectManager::showImgAndInfo(){
         std::cerr << "error: run out of queues" << std::endl;
     if( left_color_queue_size != left_depth_queue_size )
         std::cerr << "error: invalid queue size" << std::endl;
-        
-    sstream.str("");
-    sstream  << left_color_queue_size << std::flush;
-    cv::putText( img_to_show_, "left color queue size: " + sstream.str(),
-                 cv::Point(10,250), cv::FONT_HERSHEY_SIMPLEX, kFontScale, cv::Scalar(255,255,0),
-                 kTextThickness );
-    sstream.str("");
-    sstream  << left_depth_queue_size << std::flush;
-    cv::putText( img_to_show_, "left depth queue size: " + sstream.str(),
-                 cv::Point(10,280), cv::FONT_HERSHEY_SIMPLEX, kFontScale, cv::Scalar(255,255,0),
-                 kTextThickness );
+
+    putText( img_to_show_, "left color queue size:" );
+    putText( img_to_show_, toString( left_color_queue_size ), false, cv::Point(220, -1) );
+    putText( img_to_show_, "left depth queue size:" );
+    putText( img_to_show_, toString( left_depth_queue_size ), false, cv::Point(220, -1) );
 
     cv::imshow( "color", img_to_show_ );
 }
 
+void KinectManager::putText( cv::Mat& img, const std::string& text, const bool newline,
+                             const cv::Scalar& color, const cv::Point& org )const{
+    static int x = 10;
+    static int y = 40;
+    x = org.x >= 0 ? org.x : 10;
+    y = org.y >= 0 ? org.y : ( newline ? y + 30 : y ) ; 
+    cv::putText( img, text, cv::Point( x, y ), cv::FONT_HERSHEY_SIMPLEX,
+                 kFontScale, color, kTextThickness );
+}
+
 const double KinectManager::kResizeScale = 0.5;
 const double KinectManager::kFontScale = 0.6;
-
+const cv::Scalar KinectManager::kRed = cv::Scalar(0,0,255);
+const cv::Scalar KinectManager::kGreen = cv::Scalar(0,255,0);
+const cv::Scalar KinectManager::kBlue = cv::Scalar(255,0,0);
+const cv::Scalar KinectManager::kOrange = cv::Scalar(0,100,255);
+const cv::Scalar KinectManager::kYellow = cv::Scalar(0,255,255);
+const cv::Scalar KinectManager::kSkyBlue = cv::Scalar(255,255,0);
 
 void MyFileLogger::log(Level level, const std::string &message){
 
