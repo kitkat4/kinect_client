@@ -662,10 +662,9 @@ bool KinectManager::saveColor(){
         return false;
     }
 
-    static cv::Mat tmp_color_img;
-    cv::cvtColor( cv::Mat( kCHeight, kCWidth, CV_8UC4, &color_queue_.front()->front() ),
-                  tmp_color_img, CV_BGRA2BGR );
-    cv::flip( tmp_color_img, tmp_color_img, 1 ); // color images taken from kinect are mirrored
+    cv::Mat tmp_color_img;
+    cv::flip( cv::Mat( kCHeight, kCWidth, CV_8UC4, &color_queue_.front()->front() ),
+                       tmp_color_img, 1 ); // color images taken from kinect are mirrored
 
     std::stringstream sstream;
     for( int i=0;; i++ ){

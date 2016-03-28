@@ -202,7 +202,7 @@ private:
 
     // to thin out frames according to fps_save_
     bool notToBeThinnedOut( const uint64_t frame_count )const{
-        return ( frame_count * fps_save_ ) % kKinectIdealFps < fps_save_;
+        return ( frame_count * fps_save_ ) % (int)fps_update_loop_ < fps_save_;
     }
 
     class FpsCalculator{
