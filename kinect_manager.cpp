@@ -613,33 +613,35 @@ void KinectManager::save(){
 
             int frame_count = 0;
 
-
-            std::thread save_depth_thread( &KinectManager::saveDepthForAnotherThread, this );
-            
             while( is( Recording ) || ! queuesAreEmpty() ){ // frame loop
                 if( is( Exiting ) )
                     break;
 
-                if( saveAsVideo() ){
-                    if( saveColor( video_writer_color ) ){
-                        frame_count++;
+                static std::stringstream sstream;
+                sstream.str("");
+                sstream << scene_dir_ + "/"
+                        << std::setw( kNumSetw ) << std::setfill('0') << frame_count << ".pcd";
+
+                if( saveDepth( sstream.str() ) ){
+
+                    if( saveAsVideo() ){
+                        if( saveColor( video_writer_color ) ){
+                            frame_count++;
+                        }else throw std::runtime_error("saveDepth returned true, but saveColor returned false.");
+                    }else{
+                        static std::stringstream sstream;
+                        sstream.str("");
+                        sstream << scene_dir_ << "/color"
+                                << std::setw( kNumSetw ) << std::setfill('0') << frame_count
+                                << ".jpg";
+
+                        if( saveColor( sstream.str() ) )
+                            frame_count++;
+                        else throw std::runtime_error("saveDepth returned true, but saveColor returned false.");
                     }
-                }else{
-                    static std::stringstream sstream;
-                    sstream.str("");
-                    sstream << scene_dir_ << "/color" << std::setw( kNumSetw ) << std::setfill('0')
-                            << frame_count << ".jpg";
-                    // sstream <<  "D:/kinect_data/color" << std::setw( kNumSetw ) << std::setfill('0')
-                    //         << frame_count << ".jpg";
-
-                    if( saveColor( sstream.str() ) )
-                        frame_count++;
                 }
-
             } // end of frame loop
 
-            save_depth_thread.join();
-            
             fps_pop_ = 0.0;
         } // end of scene loop
     }catch( std::exception& ex ){
@@ -656,12 +658,6 @@ bool KinectManager::saveColor( cv::VideoWriter& video_writer ){
         return false;
     }
 
-    if( color_queue_.front() == nullptr ){
-        pop_color_queue_ = true;
-        std::this_thread::sleep_for( std::chrono::milliseconds( 30 ));
-        return false;
-    }
-    
     static cv::Mat tmp_color_img;
     cv::cvtColor( cv::Mat( kCHeight, kCWidth, CV_8UC4, &color_queue_.front()->front() ),
                   tmp_color_img, CV_BGRA2BGR );
@@ -680,13 +676,6 @@ bool KinectManager::saveColor( const std::string& file_path ){
         return false;
     }
 
-    if( color_queue_.front() == nullptr ){
-        pop_color_queue_ = true;
-        std::this_thread::sleep_for( std::chrono::milliseconds( 30 ));
-        return false;
-    }
-
-    
     static cv::Mat tmp_color_img;
     cv::flip( cv::Mat( kCHeight, kCWidth, CV_8UC4, &color_queue_.front()->front() ),
                        tmp_color_img, 1 ); // color images taken from kinect are mirrored
@@ -704,11 +693,6 @@ bool KinectManager::saveDepth( const std::string& file_path ){
     static frame_t registered( kDWidth, kDHeight, kDNumOfBytesPerPixel );
 
     if( pop_depth_queue_ || depth_queue_.empty() ){
-        std::this_thread::sleep_for( std::chrono::milliseconds( 30 ));
-        return false;
-    }
-    if( depth_queue_.front() == nullptr ){
-        pop_depth_queue_ = true;
         std::this_thread::sleep_for( std::chrono::milliseconds( 30 ));
         return false;
     }
@@ -754,22 +738,6 @@ bool KinectManager::saveDepth( const std::string& file_path ){
 
     
     return true;
-}
-
-void KinectManager::saveDepthForAnotherThread(){
-
-    int frame_count = 0;
-    while( is( Recording ) || ! queuesAreEmpty() ){ // frame loop
-        if( is( Exiting ) )
-            break;
-        static std::stringstream sstream;
-        sstream.str("");
-        sstream << scene_dir_ + "/"
-                << std::setw( kNumSetw ) << std::setfill('0') << frame_count << ".pcd";
-
-        if( saveDepth( sstream.str() ) )
-            frame_count++;                
-    } // end of frame loop
 }
 
 void KinectManager::sync(){
