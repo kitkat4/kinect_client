@@ -461,10 +461,26 @@ void KinectManager::update(){
             std::this_thread::sleep_for( std::chrono::milliseconds( 10 ) );
 
         uint64_t loop_count = 0;
+        LARGE_INTEGER timestamp, freq;
+        QueryPerformanceCounter( &timestamp );
+        QueryPerformanceFrequency( &freq );
         while( ! is( Exiting ) ){
+
+            static double tmp_fps = 0.0;
 
             listener_->waitForNewFrame( frames_ );
 
+            LARGE_INTEGER now;
+            QueryPerformanceCounter( &now );            
+            if( (double)(now.QuadPart- timestamp.QuadPart)/freq.QuadPart <= 0.05 ){
+                listener_->release( frames_ );
+                continue;
+            }
+            timestamp = now;
+
+            static FpsCalculator fps_calc( 15 );
+            fps_update_loop_ = fps_calc.fps();
+                
             if( is( Recording ) ){
                 data_dst_color = &color_buf_[ buf_index ][0];
                 data_dst_depth = &depth_buf_[ buf_index ][0];
@@ -493,18 +509,16 @@ void KinectManager::update(){
                 current_frame_color_ = &color_buf_idle_;
                 current_frame_depth_ = &depth_buf_idle_;
             }
-
             
             listener_->release( frames_ );
 
-            static FpsCalculator fps_calc( 30 );
-            
-            if( fps_calc.fps( fps_update_loop_ ) ){
+            static FpsCalculator tmp_fps_calc( 15 );
+            if( tmp_fps_calc.fps( tmp_fps ) ){
                 if( is( WaitingForFpsStabilized ) ){
                     
                     static int high_fps_count = 0;
                     
-                    if( fps_update_loop_ >= 29.0 )
+                    if( tmp_fps >= 14.7 )
                         high_fps_count++;
                     else
                         high_fps_count = 0;
@@ -517,7 +531,7 @@ void KinectManager::update(){
                 }
             }
             
-            if( ! specifyEachFrame() && is( Recording ) && notToBeThinnedOut( loop_count ) ){
+            if( ! specifyEachFrame() && is( Recording ) && notToBeThinnedOut( loop_count, fps_save_, 15 ) ){
                 saveCurrentFrame();
                 static FpsCalculator fps_calc_push( fps_save_ );
                 fps_push_ = fps_calc_push.fps();
@@ -548,7 +562,7 @@ void KinectManager::updateQueue(){
         pop_color_queue_ = false;
         pop_depth_queue_ = false;
 
-        static FpsCalculator fps_calc( 3 );
+        static FpsCalculator fps_calc( fps_save_ );
         fps_pop_ = fps_calc.fps();
     }
 
@@ -607,11 +621,20 @@ void KinectManager::save(){
                     break;
 
                 if( saveAsVideo() ){
-                    if( saveColor( video_writer_color ) )
+                    if( saveColor( video_writer_color ) ){
                         frame_count++;
-                }else
-                    if( saveColor() )
+                    }
+                }else{
+                    static std::stringstream sstream;
+                    sstream.str("");
+                    sstream << scene_dir_ << "/color" << std::setw( kNumSetw ) << std::setfill('0')
+                            << frame_count << ".jpg";
+                    // sstream <<  "D:/kinect_data/color" << std::setw( kNumSetw ) << std::setfill('0')
+                    //         << frame_count << ".jpg";
+
+                    if( saveColor( sstream.str() ) )
                         frame_count++;
+                }
 
             } // end of frame loop
 
@@ -628,55 +651,49 @@ void KinectManager::save(){
 
 bool KinectManager::saveColor( cv::VideoWriter& video_writer ){
 
-    if( pop_color_queue_ )
-        return false;
-
-    if( color_queue_.empty() )
-        return false;
-
-    if( color_queue_.front() == nullptr ){
-        pop_color_queue_ = true;
+    if( pop_color_queue_ || color_queue_.empty() ){
+        std::this_thread::sleep_for( std::chrono::milliseconds( 30 ));
         return false;
     }
 
+    if( color_queue_.front() == nullptr ){
+        pop_color_queue_ = true;
+        std::this_thread::sleep_for( std::chrono::milliseconds( 30 ));
+        return false;
+    }
+    
     static cv::Mat tmp_color_img;
     cv::cvtColor( cv::Mat( kCHeight, kCWidth, CV_8UC4, &color_queue_.front()->front() ),
                   tmp_color_img, CV_BGRA2BGR );
     cv::flip( tmp_color_img, tmp_color_img, 1 ); // color images taken from kinect are mirrored
     video_writer << tmp_color_img;
+
     
     pop_color_queue_ = true;
     return true;
 }
 
-bool KinectManager::saveColor(){
+bool KinectManager::saveColor( const std::string& file_path ){
 
-    if( pop_color_queue_ )
+    if( pop_color_queue_ || color_queue_.empty() ){
+        std::this_thread::sleep_for( std::chrono::milliseconds( 30 ));
         return false;
-
-    if( color_queue_.empty() )
-        return false;
+    }
 
     if( color_queue_.front() == nullptr ){
         pop_color_queue_ = true;
+        std::this_thread::sleep_for( std::chrono::milliseconds( 30 ));
         return false;
     }
 
-    cv::Mat tmp_color_img;
+    
+    static cv::Mat tmp_color_img;
     cv::flip( cv::Mat( kCHeight, kCWidth, CV_8UC4, &color_queue_.front()->front() ),
                        tmp_color_img, 1 ); // color images taken from kinect are mirrored
 
-    std::stringstream sstream;
-    for( int i=0;; i++ ){
-        sstream.str("");
-        sstream << scene_dir_ << "/color" << std::setw( kNumSetw ) << std::setfill('0') << i
-                << ".jpg";
-        if( ! boost::filesystem::exists( boost::filesystem::path( sstream.str() ) ) ){
-            cv::imwrite( sstream.str(), tmp_color_img );
-            break;
-        }
-    }
-    
+
+    cv::imwrite( file_path, tmp_color_img );
+     
     pop_color_queue_ = true;
     return true;
 }
@@ -685,13 +702,14 @@ bool KinectManager::saveDepth( const std::string& file_path ){
 
     static frame_t undistorted( kDWidth, kDHeight, kDNumOfBytesPerPixel );
     static frame_t registered( kDWidth, kDHeight, kDNumOfBytesPerPixel );
-    
-    if( pop_depth_queue_ )
+
+    if( pop_depth_queue_ || depth_queue_.empty() ){
+        std::this_thread::sleep_for( std::chrono::milliseconds( 30 ));
         return false;
-    if( depth_queue_.empty() )
-        return false;
+    }
     if( depth_queue_.front() == nullptr ){
         pop_depth_queue_ = true;
+        std::this_thread::sleep_for( std::chrono::milliseconds( 30 ));
         return false;
     }
 
@@ -702,7 +720,7 @@ bool KinectManager::saveDepth( const std::string& file_path ){
 
     registration_->apply( &color_frame, &depth_frame, &undistorted, &registered );
 
-    cloudRGB_t::Ptr cloud( new cloudRGB_t );
+    static cloudRGB_t::Ptr cloud( new cloudRGB_t(kDWidth, kDHeight) );
 
     float rgb_buf;
     for( int i_row = 0; i_row < kDHeight; i_row++ ){
@@ -727,12 +745,14 @@ bool KinectManager::saveDepth( const std::string& file_path ){
             point.z = vec_output_coords( 2 );
 
             point.rgb = rgb_buf;
-            
-            cloud->push_back( point );
+
+            (*cloud)( i_column, i_row ) = point;
         }
     }
     pcl::io::savePCDFileBinary<pcl::PointXYZRGB>( file_path, *cloud );
     pop_depth_queue_ = true;
+
+    
     return true;
 }
 
@@ -921,7 +941,8 @@ const cv::Scalar KinectManager::kSkyBlue = cv::Scalar(255,255,0);
 
 void MyFileLogger::log(Level level, const std::string &message){
 
-    if( level >= Info ){
+    if( level == Debug ){}
+    else if( level == Info ){
         // this message is originally "Info", but treated as "Warning".
         if( message.find( "packets were lost" ) != std::string::npos ){ 
             std::cerr << "[Warning] " << message << std::endl;

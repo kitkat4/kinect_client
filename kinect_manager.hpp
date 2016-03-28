@@ -40,7 +40,9 @@
 #include <ctime>
 #include <algorithm>
 #include <cmath>
-#include <bitset>
+
+//#include <mmsystem.h> // timeGetTime()
+#include <windows.h>
 
 
 #if defined(_MSC_VER) && _MSC_VER < 1800
@@ -116,7 +118,9 @@ public:
                    const int save_fps = kKinectIdealFps,
                    const double fps_color_video = 29.97,
                    const std::string& log_file_name = "kinect.log",
-                   const int fourcc_color = CV_FOURCC( 'M', 'J', 'P', 'G' ) );
+                   const int fourcc_color = // CV_FOURCC( 'M', 'J', 'P', 'G' )
+                   CV_FOURCC('X','V','I','D')
+                   );
     ~KinectManager();
 
     void init();
@@ -156,7 +160,7 @@ private:
     void save();
 
     bool saveColor( cv::VideoWriter& video_writer ); // when save color frames as a video file
-    bool saveColor(); // when save color frames as pictures
+    bool saveColor( const std::string& file_path ); // when save color frames as pictures
     bool saveDepth( const std::string& file_path );
     void saveDepthForAnotherThread();
     void sync();
@@ -200,24 +204,61 @@ private:
                               - src.z * d / ( a*src.x + b*src.y + c*src.z ) );
     }
 
-    // to thin out frames according to fps_save_
-    bool notToBeThinnedOut( const uint64_t frame_count )const{
-        return ( frame_count * fps_save_ ) % (int)fps_update_loop_ < fps_save_;
+    // to thin out frames according to fps
+    bool notToBeThinnedOut( const uint64_t frame_count, const int fps, int loop_fps )const{
+        return loop_fps <= 0 ? true : ( frame_count * fps ) % loop_fps < fps;
     }
+
+    // class FpsCalculator{
+    // public:
+    //     FpsCalculator( const int update_cycle )
+    //         : loop_count_( 0 ),
+    //           timestamp_( clock() ),
+    //           update_cycle_( update_cycle ),
+    //           fps_( 0.0 ){}
+    //     ~FpsCalculator(){}
+    //     bool fps( volatile double& out_fps ){
+    //         bool ret = false;
+    //         if( ++loop_count_ % update_cycle_ == 0 ){
+    //             clock_t now = clock();
+    //             fps_ = (double)(update_cycle_*CLOCKS_PER_SEC)/( now - timestamp_ );
+    //             timestamp_ = now;
+    //             ret = true;
+    //             loop_count_ = 0;
+    //         }
+    //         out_fps = fps_;
+    //         return ret;
+    //     }
+    //     double fps(){
+    //         double ret = 0;
+    //         fps( ret );
+    //         return ret;
+    //     }
+
+    // private:
+    //     int loop_count_;
+    //     clock_t timestamp_;
+    //     int update_cycle_;
+    //     double fps_;
+    // };
 
     class FpsCalculator{
     public:
         FpsCalculator( const int update_cycle )
             : loop_count_( 0 ),
-              timestamp_( clock() ),
               update_cycle_( update_cycle ),
-              fps_( 0.0 ){}
+              fps_( 0.0 ){
+
+            QueryPerformanceCounter( &timestamp_ );
+            QueryPerformanceFrequency( &freq_ );
+        }
         ~FpsCalculator(){}
         bool fps( volatile double& out_fps ){
             bool ret = false;
             if( ++loop_count_ % update_cycle_ == 0 ){
-                clock_t now = clock();
-                fps_ = (double)(update_cycle_*CLOCKS_PER_SEC)/( now - timestamp_ );
+                LARGE_INTEGER now;
+                QueryPerformanceCounter( &now );
+                fps_ = (double)(update_cycle_*freq_.QuadPart)/( now.QuadPart - timestamp_.QuadPart );
                 timestamp_ = now;
                 ret = true;
                 loop_count_ = 0;
@@ -233,10 +274,11 @@ private:
 
     private:
         int loop_count_;
-        clock_t timestamp_;
+        LARGE_INTEGER timestamp_, freq_;
         int update_cycle_;
         double fps_;
     };
+
 
     MyFileLogger logger_;
     

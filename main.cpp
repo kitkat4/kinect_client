@@ -8,7 +8,7 @@ int main(){
     std::string server_ip = "", server_port = "";
     bool specify_each_frame = false;
 
-    std::ifstream ifs( "kinect_manager_settings.tsv" );
+    std::ifstream ifs( "kinect_client_settings.tsv" );
     if( ! ifs )
         std::cerr << "warning: no setting file found!" << std::endl;
     else{
@@ -41,7 +41,7 @@ int main(){
     try{
         std::string kWorkingDir = "C:/Users/admin/Desktop/kinect_data";
         KinectManager kinect_manager( kWorkingDir, server_ip, server_port, specify_each_frame,
-                                      4, -1 );
+                                      4, 4 );
         kinect_manager.init();
         kinect_manager.startKinectAndCreateWindow();
         kinect_manager.enterMainLoop();

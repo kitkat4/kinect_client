@@ -68,3 +68,5 @@
 // link libfreenect2 libraries
 #pragma comment(lib, "freenect2.lib")
 
+//#pragma comment( lib, "winmm.lib" )
+
