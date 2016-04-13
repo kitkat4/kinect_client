@@ -162,6 +162,8 @@ private:
     bool saveColor( cv::VideoWriter& video_writer ); // when save color frames as a video file
     bool saveColor( const std::string& file_path ); // when save color frames as pictures
     bool saveDepth( const std::string& file_path );
+    void createSceneDir();
+    void waitVideoWriterToBeOpened( cv::VideoWriter& video_writer );
     void sync();
     void processRecvBuf( const std::vector<char>* buf, // somehow buf as reference doesn't work
                          const boost::system::error_code& error,
@@ -174,7 +176,6 @@ private:
                   const cv::Point& org )const{
         putText( img ,text, newline, kSkyBlue, org );
     };
-
     std::string toString( const volatile double value ){
         static std::stringstream sstream;
         sstream.str("");
@@ -187,6 +188,7 @@ private:
         sstream << value;
         return sstream.str();
     }
+
 
     bool is( const uint32_t state )const{ return recorder_state_ == state; }
     void set( const uint32_t state ){ recorder_state_ = state; }

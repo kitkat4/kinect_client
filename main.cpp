@@ -39,9 +39,9 @@ int main(){
     }
     
     try{
-        std::string kWorkingDir = "C:/Users/admin/Desktop/kinect_data";
+        std::string kWorkingDir = "D:/kinect_data";
         KinectManager kinect_manager( kWorkingDir, server_ip, server_port, specify_each_frame,
-                                      4, 4 );
+                                      15, -1 );
         kinect_manager.init();
         kinect_manager.startKinectAndCreateWindow();
         kinect_manager.enterMainLoop();

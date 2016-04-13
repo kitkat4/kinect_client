@@ -582,33 +582,14 @@ void KinectManager::save(){
                 std::this_thread::sleep_for( std::chrono::milliseconds( 10 ) );
                 continue;
             }
-            
-            { // create scene directory
-                for( int i = 1; ; i++ ){ // begin from 1 for the compatibility with Cortex.
-                    std::stringstream sstream;
-                    sstream << out_dir_ + "/" + motion_name_ << std::setw( kNumSetw ) << std::setfill('0') << i;
-                    if( ! boost::filesystem::exists( boost::filesystem::path( sstream.str() ) ) ){
-                        scene_dir_ = sstream.str();
-                        break;
-                    }
-                }
-                boost::filesystem::create_directory( boost::filesystem::path( scene_dir_ ) );
-            }
+
+            createSceneDir();
 
             // open video file
             cv::VideoWriter video_writer_color;
             if( saveAsVideo() ){
-                video_writer_for_main_thread_ = &video_writer_color;
-                // wait for video_writer_color to be opened
-                int count = 0;
-                while( video_writer_for_main_thread_ ){ 
-                    std::this_thread::sleep_for( std::chrono::milliseconds( 1 ));
-                    if( count++ > 5000 ){
-                        std::cerr << "error: failed to open " << scene_dir_ + "/color.avi"
-                                  << std::endl;
-                        return;
-                    }
-                }
+                waitVideoWriterToBeOpened( video_writer_color );
+
             }
 
             int frame_count = 0;
@@ -633,7 +614,7 @@ void KinectManager::save(){
                         sstream.str("");
                         sstream << scene_dir_ << "/color"
                                 << std::setw( kNumSetw ) << std::setfill('0') << frame_count
-                                << ".jpg";
+                                << ".bmp";
 
                         if( saveColor( sstream.str() ) )
                             frame_count++;
@@ -738,6 +719,34 @@ bool KinectManager::saveDepth( const std::string& file_path ){
 
     
     return true;
+}
+
+void KinectManager::createSceneDir(){
+    
+    for( int i = 1; ; i++ ){ // begin from 1 for the compatibility with Cortex.
+        std::stringstream sstream;
+        sstream << out_dir_ + "/" + motion_name_ << std::setw( kNumSetw ) << std::setfill('0') << i;
+        if( ! boost::filesystem::exists( boost::filesystem::path( sstream.str() ) ) ){
+            scene_dir_ = sstream.str();
+            break;
+        }
+    }
+    boost::filesystem::create_directory( boost::filesystem::path( scene_dir_ ) );
+    return;
+}
+
+void KinectManager::waitVideoWriterToBeOpened( cv::VideoWriter& video_writer ){
+    video_writer_for_main_thread_ = &video_writer;
+    // wait for video_writer_color to be opened
+    int count = 0;
+    while( video_writer_for_main_thread_ ){ 
+        std::this_thread::sleep_for( std::chrono::milliseconds( 1 ));
+        if( count++ > 5000 ){
+            std::cerr << "error: failed to open " << scene_dir_ + "/color.avi"
+                      << std::endl;
+            return;
+        }
+    }
 }
 
 void KinectManager::sync(){
