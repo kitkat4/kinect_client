@@ -158,10 +158,15 @@ void KinectManager::startKinectAndCreateWindow(){
 
         registration_.reset( new libfreenect2::Registration( device_->getIrCameraParams(),
                                                device_->getColorCameraParams() ) );
+
+        if( saveKinectParams( out_dir_ + "/kinect" + device_->getSerialNumber() + "_params.txt" ) )
+            throw std::runtime_error("failed to write kinect parameters.");
+        
     }catch( std::exception& ex ){
         std::cerr << "error in " << __func__ << ": " << ex.what() << std::endl;
         throw;
     }
+    
     set( WaitingForFpsStabilized );
 }
 
@@ -445,7 +450,8 @@ void KinectManager::enterMainLoop(){
     }
     save_thread_.join();
     update_thread_.join();
-    
+
+
     return;
 }
 
@@ -719,6 +725,115 @@ bool KinectManager::saveDepth( const std::string& file_path ){
 
     
     return true;
+}
+
+int KinectManager::saveKinectParams( const std::string& file_path,
+                                     const device_t::IrCameraParams& ip,
+                                     const device_t::ColorCameraParams& cp )const{
+
+    cv::FileStorage fs( file_path, cv::FileStorage::WRITE );
+    if( ! fs.isOpened() )
+        return 1;
+
+    setlocale( LC_ALL, "JPN" );
+    time_t tmp_time = time( nullptr );
+    fs << "date" << asctime( localtime( &tmp_time ) );
+
+    fs << "IrCameraParams" << "{";
+    {
+        fs << "fx" << "[" << ip.fx << toBinaryString( ip.fx ) << "]";
+        fs << "fy" << "[" << ip.fy << toBinaryString( ip.fy ) << "]";
+        fs << "cx" << "[" << ip.cx << toBinaryString( ip.cx ) << "]";
+        fs << "cy" << "[" << ip.cy << toBinaryString( ip.cy ) << "]";
+        fs << "k1" << "[" << ip.k1 << toBinaryString( ip.k1 ) << "]";
+        fs << "k2" << "[" << ip.k2 << toBinaryString( ip.k2 ) << "]";
+        fs << "k3" << "[" << ip.k3 << toBinaryString( ip.k3 ) << "]";
+        fs << "p1" << "[" << ip.p1 << toBinaryString( ip.p1 ) << "]";    
+        fs << "p2" << "[" << ip.p2 << toBinaryString( ip.p2 ) << "]";
+    }
+    fs << "}";
+
+    fs << "ColorCameraParams" << "{";
+    {
+        fs << "fx" << "[" << cp.fx << toBinaryString( cp.fx )<< "]";
+        fs << "fy" << "[" << cp.fy << toBinaryString( cp.fy )<< "]";
+        fs << "cx" << "[" << cp.cx << toBinaryString( cp.cx )<< "]";
+        fs << "cy" << "[" << cp.cy << toBinaryString( cp.cy )<< "]";
+        fs << "shift_d" << "[" << cp.shift_d << toBinaryString( cp.shift_d )<< "]";
+        fs << "shift_m" << "[" << cp.shift_m << toBinaryString( cp.shift_m )<< "]";
+        fs << "mx_x3y0" << "[" << cp.mx_x3y0 << toBinaryString( cp.mx_x3y0 )<< "]";
+        fs << "mx_x0y3" << "[" << cp.mx_x0y3 << toBinaryString( cp.mx_x0y3 )<< "]";
+        fs << "mx_x2y1" << "[" << cp.mx_x2y1 << toBinaryString( cp.mx_x2y1 )<< "]";
+        fs << "mx_x1y2" << "[" << cp.mx_x1y2 << toBinaryString( cp.mx_x1y2 )<< "]";
+        fs << "mx_x2y0" << "[" << cp.mx_x2y0 << toBinaryString( cp.mx_x2y0 )<< "]";
+        fs << "mx_x0y2" << "[" << cp.mx_x0y2 << toBinaryString( cp.mx_x0y2 )<< "]";
+        fs << "mx_x1y1" << "[" << cp.mx_x1y1 << toBinaryString( cp.mx_x1y1 )<< "]";
+        fs << "mx_x1y0" << "[" << cp.mx_x1y0 << toBinaryString( cp.mx_x1y0 )<< "]";
+        fs << "mx_x0y1" << "[" << cp.mx_x0y1 << toBinaryString( cp.mx_x0y1 )<< "]";
+        fs << "mx_x0y0" << "[" << cp.mx_x0y0 << toBinaryString( cp.mx_x0y0 )<< "]";
+        fs << "my_x3y0" << "[" << cp.my_x3y0 << toBinaryString( cp.my_x3y0 )<< "]";
+        fs << "my_x0y3" << "[" << cp.my_x0y3 << toBinaryString( cp.my_x0y3 )<< "]";
+        fs << "my_x2y1" << "[" << cp.my_x2y1 << toBinaryString( cp.my_x2y1 )<< "]";
+        fs << "my_x1y2" << "[" << cp.my_x1y2 << toBinaryString( cp.my_x1y2 )<< "]";
+        fs << "my_x2y0" << "[" << cp.my_x2y0 << toBinaryString( cp.my_x2y0 )<< "]";
+        fs << "my_x0y2" << "[" << cp.my_x0y2 << toBinaryString( cp.my_x0y2 )<< "]";
+        fs << "my_x1y1" << "[" << cp.my_x1y1 << toBinaryString( cp.my_x1y1 )<< "]";
+        fs << "my_x1y0" << "[" << cp.my_x1y0 << toBinaryString( cp.my_x1y0 )<< "]";
+        fs << "my_x0y1" << "[" << cp.my_x0y1 << toBinaryString( cp.my_x0y1 )<< "]";
+        fs << "my_x0y0" << "[" << cp.my_x0y0 << toBinaryString( cp.my_x0y0 )<< "]";
+    }
+    fs << "}";
+
+    fs.release();
+    return 0;
+}
+
+int KinectManager::loadKinectParams( const std::string& file_path,
+                                     device_t::IrCameraParams& ip,
+                                     device_t::ColorCameraParams& cp )const{
+
+    cv::FileStorage fs( file_path, cv::FileStorage::READ );
+    if( ! fs.isOpened() )
+        return 1;
+    
+    ip.fx = toFloat( (std::string)fs["IrCameraParams"]["fx"][1] );
+    ip.fy = toFloat( (std::string)fs["IrCameraParams"]["fy"][1] );
+    ip.cx = toFloat( (std::string)fs["IrCameraParams"]["cx"][1] );
+    ip.cy = toFloat( (std::string)fs["IrCameraParams"]["cy"][1] );
+    ip.k1 = toFloat( (std::string)fs["IrCameraParams"]["k1"][1] );
+    ip.k2 = toFloat( (std::string)fs["IrCameraParams"]["k2"][1] );
+    ip.k3 = toFloat( (std::string)fs["IrCameraParams"]["k3"][1] );
+    ip.p1 = toFloat( (std::string)fs["IrCameraParams"]["p1"][1] );
+    ip.p2 = toFloat( (std::string)fs["IrCameraParams"]["p2"][1] );
+
+    cp.fx = toFloat((std::string)fs["ColorCameraParams"]["fx"][1] );
+    cp.fy = toFloat((std::string)fs["ColorCameraParams"]["fy"][1] );
+    cp.cx = toFloat((std::string)fs["ColorCameraParams"]["cx"][1] );
+    cp.cy = toFloat((std::string)fs["ColorCameraParams"]["cy"][1] );
+    cp.shift_d = toFloat((std::string)fs["ColorCameraParams"]["shift_d"][1] );
+    cp.shift_m = toFloat((std::string)fs["ColorCameraParams"]["shift_m"][1] );
+    cp.mx_x3y0 = toFloat((std::string)fs["ColorCameraParams"]["mx_x3y0"][1] );
+    cp.mx_x0y3 = toFloat((std::string)fs["ColorCameraParams"]["mx_x0y3"][1] );
+    cp.mx_x2y1 = toFloat((std::string)fs["ColorCameraParams"]["mx_x2y1"][1] );
+    cp.mx_x1y2 = toFloat((std::string)fs["ColorCameraParams"]["mx_x1y2"][1] );
+    cp.mx_x2y0 = toFloat((std::string)fs["ColorCameraParams"]["mx_x2y0"][1] );
+    cp.mx_x0y2 = toFloat((std::string)fs["ColorCameraParams"]["mx_x0y2"][1] );
+    cp.mx_x1y1 = toFloat((std::string)fs["ColorCameraParams"]["mx_x1y1"][1] );
+    cp.mx_x1y0 = toFloat((std::string)fs["ColorCameraParams"]["mx_x1y0"][1] );
+    cp.mx_x0y1 = toFloat((std::string)fs["ColorCameraParams"]["mx_x0y1"][1] );
+    cp.mx_x0y0 = toFloat((std::string)fs["ColorCameraParams"]["mx_x0y0"][1] );
+    cp.my_x3y0 = toFloat((std::string)fs["ColorCameraParams"]["my_x3y0"][1] );
+    cp.my_x0y3 = toFloat((std::string)fs["ColorCameraParams"]["my_x0y3"][1] );
+    cp.my_x2y1 = toFloat((std::string)fs["ColorCameraParams"]["my_x2y1"][1] );
+    cp.my_x1y2 = toFloat((std::string)fs["ColorCameraParams"]["my_x1y2"][1] );
+    cp.my_x2y0 = toFloat((std::string)fs["ColorCameraParams"]["my_x2y0"][1] );
+    cp.my_x0y2 = toFloat((std::string)fs["ColorCameraParams"]["my_x0y2"][1] );
+    cp.my_x1y1 = toFloat((std::string)fs["ColorCameraParams"]["my_x1y1"][1] );
+    cp.my_x1y0 = toFloat((std::string)fs["ColorCameraParams"]["my_x1y0"][1] );
+    cp.my_x0y1 = toFloat((std::string)fs["ColorCameraParams"]["my_x0y1"][1] );
+    cp.my_x0y0 = toFloat((std::string)fs["ColorCameraParams"]["my_x0y0"][1] );
+    
+    return 0;
 }
 
 void KinectManager::createSceneDir(){

@@ -93,6 +93,7 @@ class KinectManager{
     typedef uint8_t color_ch_t; // channel type of color frame
     typedef float depth_ch_t;   // channel type of depth frame
     typedef libfreenect2::Frame frame_t;
+    typedef libfreenect2::Freenect2Device device_t;
     typedef boost::asio::ip::udp udp_t;
     typedef pcl::PointCloud<pcl::PointXYZ> cloud_t;
     typedef pcl::PointCloud<pcl::PointXYZRGB> cloudRGB_t;
@@ -162,6 +163,16 @@ private:
     bool saveColor( cv::VideoWriter& video_writer ); // when save color frames as a video file
     bool saveColor( const std::string& file_path ); // when save color frames as pictures
     bool saveDepth( const std::string& file_path );
+    int saveKinectParams( const std::string& file_path )const{
+        return saveKinectParams( file_path, device_->getIrCameraParams(),
+                                 device_->getColorCameraParams() );
+    }
+    int saveKinectParams( const std::string& file_path,
+                          const device_t::IrCameraParams& ip,
+                          const device_t::ColorCameraParams& cp )const;
+    int loadKinectParams( const std::string& file_path,
+                          device_t::IrCameraParams& ip,
+                          device_t::ColorCameraParams& cp )const;
     void createSceneDir();
     void waitVideoWriterToBeOpened( cv::VideoWriter& video_writer );
     void sync();
@@ -176,13 +187,38 @@ private:
                   const cv::Point& org )const{
         putText( img ,text, newline, kSkyBlue, org );
     };
-    std::string toString( const volatile double value ){
+    
+    std::string toBinaryString( const float value )const{
+        union{
+            float v;
+            uint32_t n;
+        }u;
+        u.v = value;
+        static std::stringstream sstream;
+        sstream.str("");
+        for( int i = 8 * sizeof( value ) - 1; i >= 0; i-- )
+            sstream << (( u.n >> i ) & 1);
+        return sstream.str();
+    }
+    float toFloat( const std::string& str )const{
+        union{
+            float v;
+            uint32_t n;
+        }u;
+        u.v = 0.0;
+        for( int i = 0; i < 8 * sizeof( float ); i++ )
+            if( str[i] == '1')
+                u.n |= (1 << (8 * sizeof( float ) - i - 1));
+        return u.v;
+    }
+    
+    std::string toString( const volatile double value )const{
         static std::stringstream sstream;
         sstream.str("");
         sstream << std::fixed << std::setprecision(3) << value;
         return sstream.str();
     }
-    std::string toString( const volatile int value ){
+    std::string toString( const volatile int value )const{
         static std::stringstream sstream;
         sstream.str("");
         sstream << value;
@@ -205,9 +241,9 @@ private:
                               - src.z * d / ( a*src.x + b*src.y + c*src.z ) );
     }
 
-    // to thin out frames according to fps
-    bool notToBeThinnedOut( const uint64_t frame_count, const int fps, int loop_fps )const{
-        return loop_fps <= 0 ? true : ( frame_count * fps ) % loop_fps < fps;
+    // to thin out frames according to freq
+    bool notToBeThinnedOut( const uint64_t frame_count, const int freq, int loop_freq )const{
+        return loop_freq <= 0 ? true : ( frame_count * freq ) % loop_freq < freq;
     }
 
     // class FpsCalculator{
@@ -284,7 +320,7 @@ private:
     MyFileLogger logger_;
     
     libfreenect2::Freenect2 freenect2_;
-    libfreenect2::Freenect2Device* device_;
+    device_t* device_;
     std::unique_ptr<libfreenect2::SyncMultiFrameListener> listener_;
     libfreenect2::FrameMap frames_;
     std::unique_ptr<libfreenect2::Registration> registration_;
