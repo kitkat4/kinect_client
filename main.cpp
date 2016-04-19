@@ -1,4 +1,4 @@
-#include "kinect_manager.hpp"
+#include "kinect_recorder.hpp"
 
 #include <string>
 #include <fstream>
@@ -40,12 +40,12 @@ int main(){
     
     try{
         std::string kWorkingDir = "D:/kinect_data";
-        KinectManager kinect_manager( kWorkingDir, server_ip, server_port, specify_each_frame,
-                                      15, -1 );
-        kinect_manager.init();
-        kinect_manager.startKinectAndCreateWindow();
-        kinect_manager.enterMainLoop();
-        kinect_manager.stopKinectAndDestroyWindow();
+        KinectRecorder kinect_recorder( kWorkingDir, server_ip, server_port, specify_each_frame,
+                                        15, -1 );
+        kinect_recorder.init();
+        kinect_recorder.startKinectAndCreateWindow();
+        kinect_recorder.enterMainLoop();
+        kinect_recorder.stopKinectAndDestroyWindow();
     }catch( std::exception& ex ){
         std::cerr << "error in " << __func__ << ": "<< ex.what() << std::endl;
         return 1;

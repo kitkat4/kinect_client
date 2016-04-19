@@ -5,10 +5,10 @@
  */
 
 
-#include "kinect_manager.hpp"
+#include "kinect_recorder.hpp"
 
 
-KinectManager::KinectManager( const std::string& out_dir,
+KinectRecorder::KinectRecorder( const std::string& out_dir,
                               const std::string& server_ip,
                               const std::string& server_port,
                               const bool specify_each_frame,
@@ -16,15 +16,18 @@ KinectManager::KinectManager( const std::string& out_dir,
                               const double fps_color_video,
                               const std::string& log_file_name,
                               const int fourcc_color )
-    : device_( nullptr ),
+    : // device_( nullptr ),
       motion_name_( "scene" ),
       recorder_state_( InitialState ),
       current_frame_color_( nullptr ),
       current_frame_depth_( nullptr ),
+      current_frame_reg_( nullptr ),
       push_color_queue_( nullptr ),
       push_depth_queue_( nullptr ),
+      push_reg_queue_( nullptr ),
       pop_color_queue_( false ),
       pop_depth_queue_( false ),
+      pop_reg_queue_( false ),
       fps_update_loop_( 0.0 ),
       fps_push_( 0.0 ),
       fps_pop_( 0.0 ),
@@ -42,7 +45,8 @@ KinectManager::KinectManager( const std::string& out_dir,
       fps_save_( fps_save <= kKinectIdealFps ? fps_save : kKinectIdealFps ),
       fps_color_video_( fps_color_video ),
       fourcc_color_( fourcc_color ),
-      logger_( (out_dir + "/" + log_file_name).c_str() ){
+      // logger_( (out_dir + "/" + log_file_name).c_str() )
+      kinect_(){
     
 
     // whether this works as a client or a standalone program
@@ -65,9 +69,9 @@ KinectManager::KinectManager( const std::string& out_dir,
 
 }
 
-KinectManager::~KinectManager(){
+KinectRecorder::~KinectRecorder(){
 
-    device_->close();
+    // device_->close();
     if( socket_calib_ ){
         if( socket_calib_->is_open() )
             socket_calib_->close();
@@ -83,30 +87,32 @@ KinectManager::~KinectManager(){
     }
 }
 
-void KinectManager::init(){
+void KinectRecorder::init(){
 
     try{
 
-        libfreenect2::setGlobalLogger( libfreenect2::createConsoleLogger( libfreenect2::Logger::Warning ) );
-        if( logger_.good() )
-            libfreenect2::setGlobalLogger( &logger_ );
+        kinect_.reset( new Kinect2("kinect509247142542") );
         
-        if( freenect2_.enumerateDevices() == 0 ){
-            std::cerr << "error: no Kinect v2 sensor connected.(" << __func__ << ")" << std::endl;
-            return;
-        }
-        device_ = freenect2_.openDevice( freenect2_.getDefaultDeviceSerialNumber() ); // open kinect
-        if( device_ == 0 ){
-            std::cerr << "error: failed to open Kinect v2 device.(" << __func__ << ")" << std::endl;
-            return;
-        }
+        // libfreenect2::setGlobalLogger( libfreenect2::createConsoleLogger( libfreenect2::Logger::Warning ) );
+        // if( logger_.good() )
+        //     libfreenect2::setGlobalLogger( &logger_ );
+        
+        // if( freenect2_.enumerateDevices() == 0 ){
+        //     std::cerr << "error: no Kinect v2 sensor connected.(" << __func__ << ")" << std::endl;
+        //     return;
+        // }
+        // device_ = freenect2_.openDevice( freenect2_.getDefaultDeviceSerialNumber() ); // open kinect
+        // if( device_ == 0 ){
+        //     std::cerr << "error: failed to open Kinect v2 device.(" << __func__ << ")" << std::endl;
+        //     return;
+        // }
 
-        listener_.reset( new libfreenect2::SyncMultiFrameListener( frame_t::Color |
-                                                                   frame_t::Depth |
-                                                                   frame_t::Ir ) );
+        // listener_.reset( new libfreenect2::SyncMultiFrameListener( frame_t::Color |
+        //                                                            frame_t::Depth |
+        //                                                            frame_t::Ir ) );
 
-        device_->setColorFrameListener( listener_.get() );
-        device_->setIrAndDepthFrameListener( listener_.get() );
+        // device_->setColorFrameListener( listener_.get() );
+        // device_->setIrAndDepthFrameListener( listener_.get() );
 
         if( ! isStandalone() ){
             if( server_ip_ == "" || server_ip_ == "" )
@@ -123,19 +129,22 @@ void KinectManager::init(){
                                     remote_endpoint_ );
         }
 
-        save_thread_ = std::thread( &KinectManager::save, this );
-        update_thread_ = std::thread( &KinectManager::update, this );
+        save_thread_ = std::thread( &KinectRecorder::save, this );
+        update_thread_ = std::thread( &KinectRecorder::update, this );
 
         if( ! isStandalone() )
-            sync_thread_ = std::thread( &KinectManager::sync, this );
+            sync_thread_ = std::thread( &KinectRecorder::sync, this );
         
         // allocate memory in advance to avoid overhead
         for( int i = 0; i < kBufSize; i++ ){
             color_buf_[i].resize( kCNumOfChannels );
             depth_buf_[i].resize( kDNumOfChannels );
+            reg_buf_[i].resize( kRNumOfChannels );
         }
         color_buf_idle_.resize( kCNumOfChannels );
-        depth_buf_idle_.resize( kDNumOfChannels );        
+        depth_buf_idle_.resize( kDNumOfChannels );
+        reg_buf_idle_.resize( kRNumOfChannels );
+        
     }catch( std::exception& ex ){
         std::cerr << "error in " << __func__ << ": " << ex.what() << std::endl;
         throw;
@@ -146,20 +155,21 @@ void KinectManager::init(){
     return;
 }
 
-void KinectManager::startKinectAndCreateWindow(){
+void KinectRecorder::startKinectAndCreateWindow(){
 
     try{
-        if( ! is( WaitingForKinectToBeStarted ) || ! device_->start() ){
-            std::cerr << "failed to start kinect sensor." << std::endl;
-            return;
-        }
+        // if( ! is( WaitingForKinectToBeStarted ) || ! device_->start() ){
+        //     std::cerr << "failed to start kinect sensor." << std::endl;
+        //     return;
+        // }
         cv::namedWindow( "color", CV_WINDOW_AUTOSIZE );
 
 
-        registration_.reset( new libfreenect2::Registration( device_->getIrCameraParams(),
-                                               device_->getColorCameraParams() ) );
+        // registration_.reset( new libfreenect2::Registration( device_->getIrCameraParams(),
+        //                                        device_->getColorCameraParams() ) );
 
-        if( saveKinectParams( out_dir_ + "/kinect" + device_->getSerialNumber() + "_params.txt" ) )
+        if( kinect_->saveKinectParams( // out_dir_ + "/kinect" + device_->getSerialNumber() + "_params.txt"
+            ) )
             throw std::runtime_error("failed to write kinect parameters.");
         
     }catch( std::exception& ex ){
@@ -170,27 +180,37 @@ void KinectManager::startKinectAndCreateWindow(){
     set( WaitingForFpsStabilized );
 }
 
-void KinectManager::calibrate(){
+void KinectRecorder::calibrate(){
 
-    static frame_t undistorted( kDWidth, kDHeight, kDNumOfBytesPerPixel );
-    static frame_t registered( kDWidth, kDHeight, kDNumOfBytesPerPixel );
+    // static frame_t undistorted( kDWidth, kDHeight, kDNumOfBytesPerPixel );
+    // static frame_t registered( kDWidth, kDHeight, kDNumOfBytesPerPixel );
+    static std::vector<depth_ch_t> depth_frame( kDNumOfChannels );
+    static std::vector<color_ch_t> reg_frame( kCNumOfChannels );
     static cv::Mat registered_to_show;
 
     try{
-    
+
+        
         std::vector<cv::Point2f> corners;
         while( true ){
 
-        
-            frame_t color_frame( kCWidth, kCHeight, kCNumOfBytesPerPixel,
-                                 reinterpret_cast<uint8_t*>(current_frame_color_->data()) );
-            frame_t depth_frame( kDWidth, kDHeight, kDNumOfBytesPerPixel,
-                                 reinterpret_cast<uint8_t*>(current_frame_depth_->data()) );
+            std::copy( current_frame_depth_->begin(),
+                       current_frame_depth_->end(),
+                       depth_frame.begin() );
+            std::copy( current_frame_reg_->begin(),
+                       current_frame_reg_->end(),
+                       reg_frame.begin() );
+            
+            // frame_t color_frame( kCWidth, kCHeight, kCNumOfBytesPerPixel,
+            //                      reinterpret_cast<uint8_t*>(current_frame_color_->data()) );
+            // frame_t depth_frame( kDWidth, kDHeight, kDNumOfBytesPerPixel,
+            //                      reinterpret_cast<uint8_t*>(current_frame_depth_->data()) );
 
-            registration_->apply( &color_frame, &depth_frame, &undistorted, &registered );
+            // registration_->apply( &color_frame, &depth_frame, &undistorted, &registered );
 
             cv::Mat color_8UC3;
-            cv::cvtColor( cv::Mat( kDHeight, kDWidth, CV_8UC4, registered.data ),
+            cv::cvtColor( cv::Mat( kDHeight, kDWidth, CV_8UC4,
+                                   reinterpret_cast<uint8_t*>( &reg_frame[0] ) ),
                           color_8UC3, CV_BGRA2BGR );
         
             registered_to_show = color_8UC3.clone();
@@ -251,10 +271,17 @@ void KinectManager::calibrate(){
         for( int i_row = min_y; i_row <= max_y; i_row++ ){ // populate the cloud
             for( int i_col = min_x; i_col <= max_x; i_col++ ){
                 pcl::PointXYZ point;
-                float rgb_buf;
-                registration_->getPointXYZRGB( &undistorted, &registered, i_row, i_col,
-                                               point.x, point.y, point.z, rgb_buf );
-                point.y *= -1;
+                depth_ch_t depth = depth_frame[ i_row * kDWidth + i_col ];
+                kinect_->mapDepthPointToCameraSpace( i_row,
+                                                     i_col,
+                                                     depth,
+                                                     point.x,
+                                                     point.y,
+                                                     point.z );
+                // registration_->getPointXYZRGB( &undistorted, &registered, i_row, i_col,
+                //                                point.x, point.y, point.z, rgb_buf );
+                // point.y *= -1;
+                
                 (*cloud)( i_col - min_x, i_row - min_y ) =  point;
             }
         }
@@ -294,18 +321,33 @@ void KinectManager::calibrate(){
         {
             pcl::PointXYZ total_x(0,0,0);
             for( int i_row = 0; i_row < kCornersHeight; i_row++ ){
-                pcl::PointXYZ p1, p2;
-                float rgb_buf;
-                registration_->getPointXYZRGB( &undistorted, &registered,
-                                               corners[ i_row * kCornersWidth ].y,
-                                               corners[ i_row * kCornersWidth ].x,
-                                               p1.x, p1.y, p1.z, rgb_buf );
-                p1.y *= -1;
-                registration_->getPointXYZRGB( &undistorted, &registered,
-                                               corners[i_row * kCornersWidth + kCornersWidth - 1].y,
-                                               corners[i_row * kCornersWidth + kCornersWidth - 1].x,
-                                               p2.x, p2.y, p2.z, rgb_buf );
-                p2.y *= -1;
+                pcl::PointXYZ p1;
+                {// populate p1
+                    int x1 = corners[ i_row * kCornersWidth ].x,
+                        y1 = corners[ i_row * kCornersWidth ].y;
+                    depth_ch_t d1 =
+                        depth_frame[ y1 * kDWidth + x1 ];
+                    kinect_->mapDepthPointToCameraSpace( y1, x1, d1, p1.x, p1.y, p1.z );
+                }
+                pcl::PointXYZ p2;
+                {// populate p2
+                    int x2 = corners[ i_row * kCornersWidth + kCornersWidth - 1 ].x,
+                        y2 = corners[ i_row * kCornersWidth + kCornersWidth - 1 ].y;
+                    depth_ch_t d2 =
+                        depth_frame[ y2 * kDWidth + x2 ];
+                    kinect_->mapDepthPointToCameraSpace( y2, x2, d2, p2.x, p2.y, p2.z );
+                }
+                // float rgb_buf;
+                // registration_->getPointXYZRGB( &undistorted, &registered,
+                //                                corners[ i_row * kCornersWidth ].y,
+                //                                corners[ i_row * kCornersWidth ].x,
+                //                                p1.x, p1.y, p1.z, rgb_buf );
+                // p1.y *= -1;
+                // registration_->getPointXYZRGB( &undistorted, &registered,
+                //                                corners[i_row * kCornersWidth + kCornersWidth - 1].y,
+                //                                corners[i_row * kCornersWidth + kCornersWidth - 1].x,
+                //                                p2.x, p2.y, p2.z, rgb_buf );
+                // p2.y *= -1;
                 pcl::PointXYZ projected1 = project( a, b, c, d, p1 ), projected2 = project( a, b, c, d, p2 );
                 total_x.x += projected1.x - projected2.x; // images taken from kinect are mirrored
                 total_x.y += projected1.y - projected2.y;
@@ -325,11 +367,17 @@ void KinectManager::calibrate(){
             pcl::PointXYZ total(0,0,0);
             for( int i = 0; i < kCornersWidth * kCornersHeight; i++ ){
                 pcl::PointXYZ p;
-                float rgb_buf;
-                registration_->getPointXYZRGB( &undistorted, &registered,
-                                               corners[i].y, corners[i].x,
-                                               p.x, p.y, p.z, rgb_buf );
-                p.y *= -1;
+                
+                depth_ch_t depth
+                    = depth_frame[ corners[i].y * kDWidth + corners[i].x ];
+                kinect_->mapDepthPointToCameraSpace( corners[i].y, corners[i].x, depth,
+                                                     p.x, p.y, p.z );
+                
+                // float rgb_buf;
+                // registration_->getPointXYZRGB( &undistorted, &registered,
+                //                                corners[i].y, corners[i].x,
+                //                                p.x, p.y, p.z, rgb_buf );
+                // p.y *= -1;
                 total.x += p.x;
                 total.y += p.y;
                 total.z += p.z;
@@ -379,7 +427,7 @@ void KinectManager::calibrate(){
 }
 
 
-void KinectManager::enterMainLoop(){
+void KinectRecorder::enterMainLoop(){
 
     while( ! is( Exiting ) ){
 
@@ -455,11 +503,12 @@ void KinectManager::enterMainLoop(){
     return;
 }
 
-void KinectManager::update(){
+void KinectRecorder::update(){
 
     static int buf_index = 0;
     static color_ch_t* data_dst_color = nullptr;
     static depth_ch_t* data_dst_depth = nullptr;
+    static color_ch_t* data_dst_reg = nullptr;
 
     try{
 
@@ -474,33 +523,46 @@ void KinectManager::update(){
 
             static double tmp_fps = 0.0;
 
-            listener_->waitForNewFrame( frames_ );
-
-            LARGE_INTEGER now;
-            QueryPerformanceCounter( &now );            
-            if( (double)(now.QuadPart- timestamp.QuadPart)/freq.QuadPart <= 0.05 ){
-                listener_->release( frames_ );
-                continue;
+            if( is( Recording ) ){
+                data_dst_color = &color_buf_[ buf_index ][0];
+                data_dst_depth = &depth_buf_[ buf_index ][0];
+                data_dst_reg = &reg_buf_[ buf_index][0];
+            }else{
+                data_dst_color = &color_buf_idle_[0];
+                data_dst_depth = &depth_buf_idle_[0];
+                data_dst_reg = &reg_buf_idle_[0];
             }
-            timestamp = now;
+            
+            kinect_->waitForNewFrame( data_dst_color, data_dst_depth, data_dst_reg );
+            // listener_->waitForNewFrame( frames_ );
+
+            // LARGE_INTEGER now;
+            // QueryPerformanceCounter( &now );            
+            // if( (double)(now.QuadPart- timestamp.QuadPart)/freq.QuadPart <= 0.05 ){
+            //     // listener_->release( frames_ );
+            //     continue;
+            // }
+            // timestamp = now;
 
             static FpsCalculator fps_calc( 15 );
             fps_update_loop_ = fps_calc.fps();
                 
-            if( is( Recording ) ){
-                data_dst_color = &color_buf_[ buf_index ][0];
-                data_dst_depth = &depth_buf_[ buf_index ][0];
-            }else{
-                data_dst_color = &color_buf_idle_[0];
-                data_dst_depth = &depth_buf_idle_[0];
-            }
+            // if( is( Recording ) ){
+            //     data_dst_color = &color_buf_[ buf_index ][0];
+            //     data_dst_depth = &depth_buf_[ buf_index ][0];
+            //     data_dst_reg = &reg_buf_[ buf_index][0];
+            // }else{
+            //     data_dst_color = &color_buf_idle_[0];
+            //     data_dst_depth = &depth_buf_idle_[0];
+            //     data_dst_reg = &reg_buf_idle_[0];
+            // }
 
-            std::copy( frames_[frame_t::Color]->data,
-                       frames_[frame_t::Color]->data + kCNumOfChannels,
-                       data_dst_color );
-            std::copy( (depth_ch_t*)frames_[frame_t::Depth]->data,
-                       (depth_ch_t*)frames_[frame_t::Depth]->data + kDNumOfChannels,
-                       data_dst_depth );
+            // std::copy( frames_[frame_t::Color]->data,
+            //            frames_[frame_t::Color]->data + kCNumOfChannels,
+            //            data_dst_color );
+            // std::copy( (depth_ch_t*)frames_[frame_t::Depth]->data,
+            //            (depth_ch_t*)frames_[frame_t::Depth]->data + kDNumOfChannels,
+            //            data_dst_depth );
 
             cv::resize( cv::Mat( kCHeight, kCWidth,CV_8UC4,
                                  data_dst_color ),
@@ -509,14 +571,16 @@ void KinectManager::update(){
             if( is( Recording ) ){
                 current_frame_color_ = color_buf_ + buf_index;
                 current_frame_depth_ = depth_buf_ + buf_index;
+                current_frame_reg_ = reg_buf_ + buf_index;
                 if( ++buf_index == kBufSize )
                     buf_index = 0;
             }else{
                 current_frame_color_ = &color_buf_idle_;
                 current_frame_depth_ = &depth_buf_idle_;
+                current_frame_reg_ = &reg_buf_idle_;
             }
             
-            listener_->release( frames_ );
+            // listener_->release( frames_ );
 
             static FpsCalculator tmp_fps_calc( 15 );
             if( tmp_fps_calc.fps( tmp_fps ) ){
@@ -551,7 +615,7 @@ void KinectManager::update(){
     }
 }
 
-void KinectManager::updateQueue(){
+void KinectRecorder::updateQueue(){
     
     if( push_color_queue_ ){
         color_queue_.push( const_cast<std::vector<color_ch_t>*>( push_color_queue_ ) );
@@ -561,13 +625,20 @@ void KinectManager::updateQueue(){
         depth_queue_.push( const_cast<std::vector<depth_ch_t>*>( push_depth_queue_ ) );
         push_depth_queue_ = nullptr;
     }
-    if( pop_color_queue_ && pop_depth_queue_ && ! color_queue_.empty() && ! depth_queue_.empty() ){
+    if( push_reg_queue_ ){
+        reg_queue_.push( const_cast<std::vector<color_ch_t>*>( push_reg_queue_ ) );
+        push_reg_queue_ = nullptr;
+    }
+    if( pop_color_queue_ && pop_depth_queue_ && pop_reg_queue_ &&
+        ! color_queue_.empty() && ! depth_queue_.empty() && ! reg_queue_.empty() ){
         
         color_queue_.pop();
         depth_queue_.pop();
+        reg_queue_.pop();
         pop_color_queue_ = false;
         pop_depth_queue_ = false;
-
+        pop_reg_queue_ = false;
+        
         static FpsCalculator fps_calc( fps_save_ );
         fps_pop_ = fps_calc.fps();
     }
@@ -575,7 +646,7 @@ void KinectManager::updateQueue(){
     return;
 }
 
-void KinectManager::save(){
+void KinectRecorder::save(){
 
     try{
     
@@ -638,7 +709,7 @@ void KinectManager::save(){
 }
 
 
-bool KinectManager::saveColor( cv::VideoWriter& video_writer ){
+bool KinectRecorder::saveColor( cv::VideoWriter& video_writer ){
 
     if( pop_color_queue_ || color_queue_.empty() ){
         std::this_thread::sleep_for( std::chrono::milliseconds( 30 ));
@@ -651,12 +722,11 @@ bool KinectManager::saveColor( cv::VideoWriter& video_writer ){
     cv::flip( tmp_color_img, tmp_color_img, 1 ); // color images taken from kinect are mirrored
     video_writer << tmp_color_img;
 
-    
     pop_color_queue_ = true;
     return true;
 }
 
-bool KinectManager::saveColor( const std::string& file_path ){
+bool KinectRecorder::saveColor( const std::string& file_path ){
 
     if( pop_color_queue_ || color_queue_.empty() ){
         std::this_thread::sleep_for( std::chrono::milliseconds( 30 ));
@@ -667,176 +737,184 @@ bool KinectManager::saveColor( const std::string& file_path ){
     cv::flip( cv::Mat( kCHeight, kCWidth, CV_8UC4, &color_queue_.front()->front() ),
                        tmp_color_img, 1 ); // color images taken from kinect are mirrored
 
-
     cv::imwrite( file_path, tmp_color_img );
      
     pop_color_queue_ = true;
     return true;
 }
 
-bool KinectManager::saveDepth( const std::string& file_path ){
+bool KinectRecorder::saveDepth( const std::string& file_path ){
 
-    static frame_t undistorted( kDWidth, kDHeight, kDNumOfBytesPerPixel );
-    static frame_t registered( kDWidth, kDHeight, kDNumOfBytesPerPixel );
+    // static frame_t undistorted( kDWidth, kDHeight, kDNumOfBytesPerPixel );
+    // static frame_t registered( kDWidth, kDHeight, kDNumOfBytesPerPixel );
 
-    if( pop_depth_queue_ || depth_queue_.empty() ){
+    if( pop_depth_queue_ || pop_reg_queue_ || depth_queue_.empty() || reg_queue_.empty() ){
         std::this_thread::sleep_for( std::chrono::milliseconds( 30 ));
         return false;
     }
 
-    frame_t color_frame( kCWidth, kCHeight, kCNumOfBytesPerPixel,
-                         reinterpret_cast<uint8_t*>(&color_queue_.front()->at(0)) );
-    frame_t depth_frame( kDWidth, kDHeight, kDNumOfBytesPerPixel,
-                         reinterpret_cast<uint8_t*>(&depth_queue_.front()->at(0)) );
+    // frame_t color_frame( kCWidth, kCHeight, kCNumOfBytesPerPixel,
+    //                      reinterpret_cast<uint8_t*>(&color_queue_.front()->at(0)) );
+    // frame_t depth_frame( kDWidth, kDHeight, kDNumOfBytesPerPixel,
+    //                      reinterpret_cast<uint8_t*>(&depth_queue_.front()->at(0)) );
 
-    registration_->apply( &color_frame, &depth_frame, &undistorted, &registered );
+    // registration_->apply( &color_frame, &depth_frame, &undistorted, &registered );
 
     static cloudRGB_t::Ptr cloud( new cloudRGB_t(kDWidth, kDHeight) );
 
-    float rgb_buf;
-    for( int i_row = 0; i_row < kDHeight; i_row++ ){
-        for( int i_column = 0; i_column < kDWidth; i_column++ ){
-            pcl::PointXYZRGB point;
-            float x,y,z;
-            registration_->getPointXYZRGB( &undistorted, &registered, i_row, i_column,
-                                           x, y, z, rgb_buf );
-            y *= -1;
+    if( H_.isContinuous() )
+        kinect_->getPointCloudRGB( &depth_queue_.front()->at(0),
+                                   &reg_queue_.front()->at(0),
+                                   *cloud,
+                                   H_[0] );
+    else throw std::runtime_error( "homogenous transformation matrix data is not continuous" );
+    
+    // float rgb_buf;
+    // for( int i_row = 0; i_row < kDHeight; i_row++ ){
+    //     for( int i_column = 0; i_column < kDWidth; i_column++ ){
+    //         pcl::PointXYZRGB point;
+    //         float x,y,z;
             
-            cv::Mat1f vec_kinect_coords( 4, 1 ), vec_output_coords( 4, 1 );
 
-            vec_kinect_coords( 0 ) = x;
-            vec_kinect_coords( 1 ) = y;
-            vec_kinect_coords( 2 ) = z;
-            vec_kinect_coords( 3 ) = 1;
+    //         registration_->getPointXYZRGB( &undistorted, &registered, i_row, i_column,
+    //                                        x, y, z, rgb_buf );
+    //         y *= -1;
             
-            vec_output_coords = H_ * vec_kinect_coords ;
+    //         cv::Mat1f vec_kinect_coords( 4, 1 ), vec_output_coords( 4, 1 );
+
+    //         vec_kinect_coords( 0 ) = x;
+    //         vec_kinect_coords( 1 ) = y;
+    //         vec_kinect_coords( 2 ) = z;
+    //         vec_kinect_coords( 3 ) = 1;
             
-            point.x = vec_output_coords( 0 );
-            point.y = vec_output_coords( 1 );
-            point.z = vec_output_coords( 2 );
+    //         vec_output_coords = H_ * vec_kinect_coords ;
+            
+    //         point.x = vec_output_coords( 0 );
+    //         point.y = vec_output_coords( 1 );
+    //         point.z = vec_output_coords( 2 );
 
-            point.rgb = rgb_buf;
+    //         point.rgb = rgb_buf;
 
-            (*cloud)( i_column, i_row ) = point;
-        }
-    }
+    //         (*cloud)( i_column, i_row ) = point;
+    //     }
+    // }
     pcl::io::savePCDFileBinary<pcl::PointXYZRGB>( file_path, *cloud );
     pop_depth_queue_ = true;
-
+    pop_reg_queue_ = true;
     
     return true;
 }
 
-int KinectManager::saveKinectParams( const std::string& file_path,
-                                     const device_t::IrCameraParams& ip,
-                                     const device_t::ColorCameraParams& cp )const{
+// int KinectRecorder::saveKinectParams( const std::string& file_path,
+//                                      const device_t::IrCameraParams& ip,
+//                                      const device_t::ColorCameraParams& cp )const{
 
-    cv::FileStorage fs( file_path, cv::FileStorage::WRITE );
-    if( ! fs.isOpened() )
-        return 1;
+//     cv::FileStorage fs( file_path, cv::FileStorage::WRITE );
+//     if( ! fs.isOpened() )
+//         return 1;
 
-    setlocale( LC_ALL, "JPN" );
-    time_t tmp_time = time( nullptr );
-    fs << "date" << asctime( localtime( &tmp_time ) );
+//     setlocale( LC_ALL, "JPN" );
+//     time_t tmp_time = time( nullptr );
+//     fs << "date" << asctime( localtime( &tmp_time ) );
 
-    fs << "IrCameraParams" << "{";
-    {
-        fs << "fx" << "[" << ip.fx << toBinaryString( ip.fx ) << "]";
-        fs << "fy" << "[" << ip.fy << toBinaryString( ip.fy ) << "]";
-        fs << "cx" << "[" << ip.cx << toBinaryString( ip.cx ) << "]";
-        fs << "cy" << "[" << ip.cy << toBinaryString( ip.cy ) << "]";
-        fs << "k1" << "[" << ip.k1 << toBinaryString( ip.k1 ) << "]";
-        fs << "k2" << "[" << ip.k2 << toBinaryString( ip.k2 ) << "]";
-        fs << "k3" << "[" << ip.k3 << toBinaryString( ip.k3 ) << "]";
-        fs << "p1" << "[" << ip.p1 << toBinaryString( ip.p1 ) << "]";    
-        fs << "p2" << "[" << ip.p2 << toBinaryString( ip.p2 ) << "]";
-    }
-    fs << "}";
+//     fs << "IrCameraParams" << "{";
+//     {
+//         fs << "fx" << "[" << ip.fx << toBinaryString( ip.fx ) << "]";
+//         fs << "fy" << "[" << ip.fy << toBinaryString( ip.fy ) << "]";
+//         fs << "cx" << "[" << ip.cx << toBinaryString( ip.cx ) << "]";
+//         fs << "cy" << "[" << ip.cy << toBinaryString( ip.cy ) << "]";
+//         fs << "k1" << "[" << ip.k1 << toBinaryString( ip.k1 ) << "]";
+//         fs << "k2" << "[" << ip.k2 << toBinaryString( ip.k2 ) << "]";
+//         fs << "k3" << "[" << ip.k3 << toBinaryString( ip.k3 ) << "]";
+//         fs << "p1" << "[" << ip.p1 << toBinaryString( ip.p1 ) << "]";    
+//         fs << "p2" << "[" << ip.p2 << toBinaryString( ip.p2 ) << "]";
+//     }
+//     fs << "}";
 
-    fs << "ColorCameraParams" << "{";
-    {
-        fs << "fx" << "[" << cp.fx << toBinaryString( cp.fx )<< "]";
-        fs << "fy" << "[" << cp.fy << toBinaryString( cp.fy )<< "]";
-        fs << "cx" << "[" << cp.cx << toBinaryString( cp.cx )<< "]";
-        fs << "cy" << "[" << cp.cy << toBinaryString( cp.cy )<< "]";
-        fs << "shift_d" << "[" << cp.shift_d << toBinaryString( cp.shift_d )<< "]";
-        fs << "shift_m" << "[" << cp.shift_m << toBinaryString( cp.shift_m )<< "]";
-        fs << "mx_x3y0" << "[" << cp.mx_x3y0 << toBinaryString( cp.mx_x3y0 )<< "]";
-        fs << "mx_x0y3" << "[" << cp.mx_x0y3 << toBinaryString( cp.mx_x0y3 )<< "]";
-        fs << "mx_x2y1" << "[" << cp.mx_x2y1 << toBinaryString( cp.mx_x2y1 )<< "]";
-        fs << "mx_x1y2" << "[" << cp.mx_x1y2 << toBinaryString( cp.mx_x1y2 )<< "]";
-        fs << "mx_x2y0" << "[" << cp.mx_x2y0 << toBinaryString( cp.mx_x2y0 )<< "]";
-        fs << "mx_x0y2" << "[" << cp.mx_x0y2 << toBinaryString( cp.mx_x0y2 )<< "]";
-        fs << "mx_x1y1" << "[" << cp.mx_x1y1 << toBinaryString( cp.mx_x1y1 )<< "]";
-        fs << "mx_x1y0" << "[" << cp.mx_x1y0 << toBinaryString( cp.mx_x1y0 )<< "]";
-        fs << "mx_x0y1" << "[" << cp.mx_x0y1 << toBinaryString( cp.mx_x0y1 )<< "]";
-        fs << "mx_x0y0" << "[" << cp.mx_x0y0 << toBinaryString( cp.mx_x0y0 )<< "]";
-        fs << "my_x3y0" << "[" << cp.my_x3y0 << toBinaryString( cp.my_x3y0 )<< "]";
-        fs << "my_x0y3" << "[" << cp.my_x0y3 << toBinaryString( cp.my_x0y3 )<< "]";
-        fs << "my_x2y1" << "[" << cp.my_x2y1 << toBinaryString( cp.my_x2y1 )<< "]";
-        fs << "my_x1y2" << "[" << cp.my_x1y2 << toBinaryString( cp.my_x1y2 )<< "]";
-        fs << "my_x2y0" << "[" << cp.my_x2y0 << toBinaryString( cp.my_x2y0 )<< "]";
-        fs << "my_x0y2" << "[" << cp.my_x0y2 << toBinaryString( cp.my_x0y2 )<< "]";
-        fs << "my_x1y1" << "[" << cp.my_x1y1 << toBinaryString( cp.my_x1y1 )<< "]";
-        fs << "my_x1y0" << "[" << cp.my_x1y0 << toBinaryString( cp.my_x1y0 )<< "]";
-        fs << "my_x0y1" << "[" << cp.my_x0y1 << toBinaryString( cp.my_x0y1 )<< "]";
-        fs << "my_x0y0" << "[" << cp.my_x0y0 << toBinaryString( cp.my_x0y0 )<< "]";
-    }
-    fs << "}";
+//     fs << "ColorCameraParams" << "{";
+//     {
+//         fs << "fx" << "[" << cp.fx << toBinaryString( cp.fx )<< "]";
+//         fs << "fy" << "[" << cp.fy << toBinaryString( cp.fy )<< "]";
+//         fs << "cx" << "[" << cp.cx << toBinaryString( cp.cx )<< "]";
+//         fs << "cy" << "[" << cp.cy << toBinaryString( cp.cy )<< "]";
+//         fs << "shift_d" << "[" << cp.shift_d << toBinaryString( cp.shift_d )<< "]";
+//         fs << "shift_m" << "[" << cp.shift_m << toBinaryString( cp.shift_m )<< "]";
+//         fs << "mx_x3y0" << "[" << cp.mx_x3y0 << toBinaryString( cp.mx_x3y0 )<< "]";
+//         fs << "mx_x0y3" << "[" << cp.mx_x0y3 << toBinaryString( cp.mx_x0y3 )<< "]";
+//         fs << "mx_x2y1" << "[" << cp.mx_x2y1 << toBinaryString( cp.mx_x2y1 )<< "]";
+//         fs << "mx_x1y2" << "[" << cp.mx_x1y2 << toBinaryString( cp.mx_x1y2 )<< "]";
+//         fs << "mx_x2y0" << "[" << cp.mx_x2y0 << toBinaryString( cp.mx_x2y0 )<< "]";
+//         fs << "mx_x0y2" << "[" << cp.mx_x0y2 << toBinaryString( cp.mx_x0y2 )<< "]";
+//         fs << "mx_x1y1" << "[" << cp.mx_x1y1 << toBinaryString( cp.mx_x1y1 )<< "]";
+//         fs << "mx_x1y0" << "[" << cp.mx_x1y0 << toBinaryString( cp.mx_x1y0 )<< "]";
+//         fs << "mx_x0y1" << "[" << cp.mx_x0y1 << toBinaryString( cp.mx_x0y1 )<< "]";
+//         fs << "mx_x0y0" << "[" << cp.mx_x0y0 << toBinaryString( cp.mx_x0y0 )<< "]";
+//         fs << "my_x3y0" << "[" << cp.my_x3y0 << toBinaryString( cp.my_x3y0 )<< "]";
+//         fs << "my_x0y3" << "[" << cp.my_x0y3 << toBinaryString( cp.my_x0y3 )<< "]";
+//         fs << "my_x2y1" << "[" << cp.my_x2y1 << toBinaryString( cp.my_x2y1 )<< "]";
+//         fs << "my_x1y2" << "[" << cp.my_x1y2 << toBinaryString( cp.my_x1y2 )<< "]";
+//         fs << "my_x2y0" << "[" << cp.my_x2y0 << toBinaryString( cp.my_x2y0 )<< "]";
+//         fs << "my_x0y2" << "[" << cp.my_x0y2 << toBinaryString( cp.my_x0y2 )<< "]";
+//         fs << "my_x1y1" << "[" << cp.my_x1y1 << toBinaryString( cp.my_x1y1 )<< "]";
+//         fs << "my_x1y0" << "[" << cp.my_x1y0 << toBinaryString( cp.my_x1y0 )<< "]";
+//         fs << "my_x0y1" << "[" << cp.my_x0y1 << toBinaryString( cp.my_x0y1 )<< "]";
+//         fs << "my_x0y0" << "[" << cp.my_x0y0 << toBinaryString( cp.my_x0y0 )<< "]";
+//     }
+//     fs << "}";
 
-    fs.release();
-    return 0;
-}
+//     fs.release();
+//     return 0;
+// }
 
-int KinectManager::loadKinectParams( const std::string& file_path,
-                                     device_t::IrCameraParams& ip,
-                                     device_t::ColorCameraParams& cp )const{
+// int KinectRecorder::loadKinectParams( const std::string& file_path,
+//                                      device_t::IrCameraParams& ip,
+//                                      device_t::ColorCameraParams& cp )const{
 
-    cv::FileStorage fs( file_path, cv::FileStorage::READ );
-    if( ! fs.isOpened() )
-        return 1;
+//     cv::FileStorage fs( file_path, cv::FileStorage::READ );
+//     if( ! fs.isOpened() )
+//         return 1;
     
-    ip.fx = toFloat( (std::string)fs["IrCameraParams"]["fx"][1] );
-    ip.fy = toFloat( (std::string)fs["IrCameraParams"]["fy"][1] );
-    ip.cx = toFloat( (std::string)fs["IrCameraParams"]["cx"][1] );
-    ip.cy = toFloat( (std::string)fs["IrCameraParams"]["cy"][1] );
-    ip.k1 = toFloat( (std::string)fs["IrCameraParams"]["k1"][1] );
-    ip.k2 = toFloat( (std::string)fs["IrCameraParams"]["k2"][1] );
-    ip.k3 = toFloat( (std::string)fs["IrCameraParams"]["k3"][1] );
-    ip.p1 = toFloat( (std::string)fs["IrCameraParams"]["p1"][1] );
-    ip.p2 = toFloat( (std::string)fs["IrCameraParams"]["p2"][1] );
+//     ip.fx = toFloat( (std::string)fs["IrCameraParams"]["fx"][1] );
+//     ip.fy = toFloat( (std::string)fs["IrCameraParams"]["fy"][1] );
+//     ip.cx = toFloat( (std::string)fs["IrCameraParams"]["cx"][1] );
+//     ip.cy = toFloat( (std::string)fs["IrCameraParams"]["cy"][1] );
+//     ip.k1 = toFloat( (std::string)fs["IrCameraParams"]["k1"][1] );
+//     ip.k2 = toFloat( (std::string)fs["IrCameraParams"]["k2"][1] );
+//     ip.k3 = toFloat( (std::string)fs["IrCameraParams"]["k3"][1] );
+//     ip.p1 = toFloat( (std::string)fs["IrCameraParams"]["p1"][1] );
+//     ip.p2 = toFloat( (std::string)fs["IrCameraParams"]["p2"][1] );
 
-    cp.fx = toFloat((std::string)fs["ColorCameraParams"]["fx"][1] );
-    cp.fy = toFloat((std::string)fs["ColorCameraParams"]["fy"][1] );
-    cp.cx = toFloat((std::string)fs["ColorCameraParams"]["cx"][1] );
-    cp.cy = toFloat((std::string)fs["ColorCameraParams"]["cy"][1] );
-    cp.shift_d = toFloat((std::string)fs["ColorCameraParams"]["shift_d"][1] );
-    cp.shift_m = toFloat((std::string)fs["ColorCameraParams"]["shift_m"][1] );
-    cp.mx_x3y0 = toFloat((std::string)fs["ColorCameraParams"]["mx_x3y0"][1] );
-    cp.mx_x0y3 = toFloat((std::string)fs["ColorCameraParams"]["mx_x0y3"][1] );
-    cp.mx_x2y1 = toFloat((std::string)fs["ColorCameraParams"]["mx_x2y1"][1] );
-    cp.mx_x1y2 = toFloat((std::string)fs["ColorCameraParams"]["mx_x1y2"][1] );
-    cp.mx_x2y0 = toFloat((std::string)fs["ColorCameraParams"]["mx_x2y0"][1] );
-    cp.mx_x0y2 = toFloat((std::string)fs["ColorCameraParams"]["mx_x0y2"][1] );
-    cp.mx_x1y1 = toFloat((std::string)fs["ColorCameraParams"]["mx_x1y1"][1] );
-    cp.mx_x1y0 = toFloat((std::string)fs["ColorCameraParams"]["mx_x1y0"][1] );
-    cp.mx_x0y1 = toFloat((std::string)fs["ColorCameraParams"]["mx_x0y1"][1] );
-    cp.mx_x0y0 = toFloat((std::string)fs["ColorCameraParams"]["mx_x0y0"][1] );
-    cp.my_x3y0 = toFloat((std::string)fs["ColorCameraParams"]["my_x3y0"][1] );
-    cp.my_x0y3 = toFloat((std::string)fs["ColorCameraParams"]["my_x0y3"][1] );
-    cp.my_x2y1 = toFloat((std::string)fs["ColorCameraParams"]["my_x2y1"][1] );
-    cp.my_x1y2 = toFloat((std::string)fs["ColorCameraParams"]["my_x1y2"][1] );
-    cp.my_x2y0 = toFloat((std::string)fs["ColorCameraParams"]["my_x2y0"][1] );
-    cp.my_x0y2 = toFloat((std::string)fs["ColorCameraParams"]["my_x0y2"][1] );
-    cp.my_x1y1 = toFloat((std::string)fs["ColorCameraParams"]["my_x1y1"][1] );
-    cp.my_x1y0 = toFloat((std::string)fs["ColorCameraParams"]["my_x1y0"][1] );
-    cp.my_x0y1 = toFloat((std::string)fs["ColorCameraParams"]["my_x0y1"][1] );
-    cp.my_x0y0 = toFloat((std::string)fs["ColorCameraParams"]["my_x0y0"][1] );
+//     cp.fx = toFloat((std::string)fs["ColorCameraParams"]["fx"][1] );
+//     cp.fy = toFloat((std::string)fs["ColorCameraParams"]["fy"][1] );
+//     cp.cx = toFloat((std::string)fs["ColorCameraParams"]["cx"][1] );
+//     cp.cy = toFloat((std::string)fs["ColorCameraParams"]["cy"][1] );
+//     cp.shift_d = toFloat((std::string)fs["ColorCameraParams"]["shift_d"][1] );
+//     cp.shift_m = toFloat((std::string)fs["ColorCameraParams"]["shift_m"][1] );
+//     cp.mx_x3y0 = toFloat((std::string)fs["ColorCameraParams"]["mx_x3y0"][1] );
+//     cp.mx_x0y3 = toFloat((std::string)fs["ColorCameraParams"]["mx_x0y3"][1] );
+//     cp.mx_x2y1 = toFloat((std::string)fs["ColorCameraParams"]["mx_x2y1"][1] );
+//     cp.mx_x1y2 = toFloat((std::string)fs["ColorCameraParams"]["mx_x1y2"][1] );
+//     cp.mx_x2y0 = toFloat((std::string)fs["ColorCameraParams"]["mx_x2y0"][1] );
+//     cp.mx_x0y2 = toFloat((std::string)fs["ColorCameraParams"]["mx_x0y2"][1] );
+//     cp.mx_x1y1 = toFloat((std::string)fs["ColorCameraParams"]["mx_x1y1"][1] );
+//     cp.mx_x1y0 = toFloat((std::string)fs["ColorCameraParams"]["mx_x1y0"][1] );
+//     cp.mx_x0y1 = toFloat((std::string)fs["ColorCameraParams"]["mx_x0y1"][1] );
+//     cp.mx_x0y0 = toFloat((std::string)fs["ColorCameraParams"]["mx_x0y0"][1] );
+//     cp.my_x3y0 = toFloat((std::string)fs["ColorCameraParams"]["my_x3y0"][1] );
+//     cp.my_x0y3 = toFloat((std::string)fs["ColorCameraParams"]["my_x0y3"][1] );
+//     cp.my_x2y1 = toFloat((std::string)fs["ColorCameraParams"]["my_x2y1"][1] );
+//     cp.my_x1y2 = toFloat((std::string)fs["ColorCameraParams"]["my_x1y2"][1] );
+//     cp.my_x2y0 = toFloat((std::string)fs["ColorCameraParams"]["my_x2y0"][1] );
+//     cp.my_x0y2 = toFloat((std::string)fs["ColorCameraParams"]["my_x0y2"][1] );
+//     cp.my_x1y1 = toFloat((std::string)fs["ColorCameraParams"]["my_x1y1"][1] );
+//     cp.my_x1y0 = toFloat((std::string)fs["ColorCameraParams"]["my_x1y0"][1] );
+//     cp.my_x0y1 = toFloat((std::string)fs["ColorCameraParams"]["my_x0y1"][1] );
+//     cp.my_x0y0 = toFloat((std::string)fs["ColorCameraParams"]["my_x0y0"][1] );
     
-    return 0;
-}
+//     return 0;
+// }
 
-void KinectManager::createSceneDir(){
+void KinectRecorder::createSceneDir(){
     
     for( int i = 1; ; i++ ){ // begin from 1 for the compatibility with Cortex.
         std::stringstream sstream;
@@ -850,7 +928,7 @@ void KinectManager::createSceneDir(){
     return;
 }
 
-void KinectManager::waitVideoWriterToBeOpened( cv::VideoWriter& video_writer ){
+void KinectRecorder::waitVideoWriterToBeOpened( cv::VideoWriter& video_writer ){
     video_writer_for_main_thread_ = &video_writer;
     // wait for video_writer_color to be opened
     int count = 0;
@@ -864,7 +942,7 @@ void KinectManager::waitVideoWriterToBeOpened( cv::VideoWriter& video_writer ){
     }
 }
 
-void KinectManager::sync(){
+void KinectRecorder::sync(){
 
     try{
         socket_sync_->send_to( boost::asio::buffer( std::string("[Kinect] I am synchronizer") ),
@@ -882,7 +960,7 @@ void KinectManager::sync(){
             memset( &buf[0], '\0', 256 );
             
             socket_sync_->async_receive( boost::asio::buffer( buf ),
-                                         std::bind(&KinectManager::processRecvBuf,
+                                         std::bind(&KinectRecorder::processRecvBuf,
                                                    this, &buf,
                                                    std::placeholders::_1,
                                                    std::placeholders::_2));
@@ -897,7 +975,7 @@ void KinectManager::sync(){
     return;
 }
 
-void KinectManager::processRecvBuf( const std::vector<char>* buf,
+void KinectRecorder::processRecvBuf( const std::vector<char>* buf,
                                     const boost::system::error_code& error,
                                     const std::size_t size ){
 
@@ -945,7 +1023,7 @@ void KinectManager::processRecvBuf( const std::vector<char>* buf,
 
 }
 
-void KinectManager::showImgAndInfo(){
+void KinectRecorder::showImgAndInfo(){
 
     if( ! current_frame_color_ )
         return;
@@ -1012,7 +1090,7 @@ void KinectManager::showImgAndInfo(){
     cv::imshow( "color", img_to_show_ );
 }
 
-void KinectManager::putText( cv::Mat& img, const std::string& text, const bool newline,
+void KinectRecorder::putText( cv::Mat& img, const std::string& text, const bool newline,
                              const cv::Scalar& color, const cv::Point& org )const{
     static int x = 10;
     static int y = 40;
@@ -1022,30 +1100,30 @@ void KinectManager::putText( cv::Mat& img, const std::string& text, const bool n
                  kFontScale, color, kTextThickness );
 }
 
-const double KinectManager::kResizeScale = 0.5;
-const double KinectManager::kFontScale = 0.6;
-const cv::Scalar KinectManager::kRed = cv::Scalar(0,0,255);
-const cv::Scalar KinectManager::kGreen = cv::Scalar(0,255,0);
-const cv::Scalar KinectManager::kBlue = cv::Scalar(255,0,0);
-const cv::Scalar KinectManager::kOrange = cv::Scalar(0,100,255);
-const cv::Scalar KinectManager::kYellow = cv::Scalar(0,255,255);
-const cv::Scalar KinectManager::kSkyBlue = cv::Scalar(255,255,0);
+const double KinectRecorder::kResizeScale = 0.5;
+const double KinectRecorder::kFontScale = 0.6;
+const cv::Scalar KinectRecorder::kRed = cv::Scalar(0,0,255);
+const cv::Scalar KinectRecorder::kGreen = cv::Scalar(0,255,0);
+const cv::Scalar KinectRecorder::kBlue = cv::Scalar(255,0,0);
+const cv::Scalar KinectRecorder::kOrange = cv::Scalar(0,100,255);
+const cv::Scalar KinectRecorder::kYellow = cv::Scalar(0,255,255);
+const cv::Scalar KinectRecorder::kSkyBlue = cv::Scalar(255,255,0);
 
-void MyFileLogger::log(Level level, const std::string &message){
+// void MyFileLogger::log(Level level, const std::string &message){
 
-    if( level == Debug ){}
-    else if( level == Info ){
-        // this message is originally "Info", but treated as "Warning".
-        if( message.find( "packets were lost" ) != std::string::npos ){ 
-            std::cerr << "[Warning] " << message << std::endl;
-            logfile_ << "[Warning] " << message << std::endl;
-        }else
-            logfile_ << "[" << libfreenect2::Logger::level2str(level) << "] " << message
-                     << std::endl;
-    }else{
-        std::cerr << "[" << libfreenect2::Logger::level2str(level) << "] " << message
-                  << std::endl;
-        logfile_ << "[" << libfreenect2::Logger::level2str(level) << "] " << message
-                 << std::endl;
-    }
-}
+//     if( level == Debug ){}
+//     else if( level == Info ){
+//         // this message is originally "Info", but treated as "Warning".
+//         if( message.find( "packets were lost" ) != std::string::npos ){ 
+//             std::cerr << "[Warning] " << message << std::endl;
+//             logfile_ << "[Warning] " << message << std::endl;
+//         }else
+//             logfile_ << "[" << libfreenect2::Logger::level2str(level) << "] " << message
+//                      << std::endl;
+//     }else{
+//         std::cerr << "[" << libfreenect2::Logger::level2str(level) << "] " << message
+//                   << std::endl;
+//         logfile_ << "[" << libfreenect2::Logger::level2str(level) << "] " << message
+//                  << std::endl;
+//     }
+// }

@@ -7,14 +7,17 @@
 
 #pragma once
 
+
+#include "kinect2.hpp"
 #include "link_libs.hpp"
+
 
 #include <opencv2/opencv.hpp>
 
-#include <libfreenect2/libfreenect2.hpp>
-#include <libfreenect2/frame_listener_impl.h>
-#include <libfreenect2/registration.h>
-#include <libfreenect2/logger.h>
+// #include <libfreenect2/libfreenect2.hpp>
+// #include <libfreenect2/frame_listener_impl.h>
+// #include <libfreenect2/registration.h>
+// #include <libfreenect2/logger.h>
 
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
@@ -56,42 +59,42 @@
 
 
 
-class MyFileLogger: public libfreenect2::Logger{
+// class MyFileLogger: public libfreenect2::Logger{
     
-private:
-    std::ofstream logfile_;
-public:
-    MyFileLogger(const char *filename){
-        open( filename );
-        level_ = Debug;
+// private:
+//     std::ofstream logfile_;
+// public:
+//     MyFileLogger(const char *filename){
+//         open( filename );
+//         level_ = Debug;
 
-    }
-    ~MyFileLogger(){
-        logfile_.close();
-    }
-    void open( const char* filename ){
-        if( filename )
-            logfile_.open(filename, std::ofstream::app );
-        if( good() ){
-            setlocale( LC_ALL, "JPN" );
-            time_t tmp_time = time( nullptr );
-            logfile_ << std::endl
-                     << asctime( localtime( &tmp_time ) ); 
-        }
-    }
+//     }
+//     ~MyFileLogger(){
+//         logfile_.close();
+//     }
+//     void open( const char* filename ){
+//         if( filename )
+//             logfile_.open(filename, std::ofstream::app );
+//         if( good() ){
+//             setlocale( LC_ALL, "JPN" );
+//             time_t tmp_time = time( nullptr );
+//             logfile_ << std::endl
+//                      << asctime( localtime( &tmp_time ) ); 
+//         }
+//     }
 
-    bool good(){
-        return logfile_.is_open() && logfile_.good();
-    }
-    virtual void log(Level level, const std::string &message);
-};
+//     bool good(){
+//         return logfile_.is_open() && logfile_.good();
+//     }
+//     virtual void log(Level level, const std::string &message);
+// };
 
 
 
-class KinectManager{
+class KinectRecorder{
 
-    typedef uint8_t color_ch_t; // channel type of color frame
-    typedef float depth_ch_t;   // channel type of depth frame
+    typedef Kinect2::color_ch_t color_ch_t; // channel type of color frame
+    typedef Kinect2::depth_ch_t depth_ch_t;   // channel type of depth frame
     typedef libfreenect2::Frame frame_t;
     typedef libfreenect2::Freenect2Device device_t;
     typedef boost::asio::ip::udp udp_t;
@@ -112,7 +115,7 @@ public:
         Exiting,
     }RecorderState;
 
-    KinectManager( const std::string& out_dir,
+    KinectRecorder( const std::string& out_dir,
                    const std::string& server_ip = "",
                    const std::string& server_port = "",
                    const bool specify_each_frame = false,
@@ -122,14 +125,14 @@ public:
                    const int fourcc_color = // CV_FOURCC( 'M', 'J', 'P', 'G' )
                    CV_FOURCC('X','V','I','D')
                    );
-    ~KinectManager();
+    ~KinectRecorder();
 
     void init();
     void startKinectAndCreateWindow();
     void calibrate();
     void stopKinectAndDestroyWindow(){
         cv::destroyAllWindows();
-        device_->stop();
+        // device_->stop();
         set( Exiting );
     }
     
@@ -148,9 +151,17 @@ public:
         else
             push_depth_queue_ = current_frame_depth_;
     }
+    void saveCurrentRegFrame(){
+        if( push_reg_queue_ )
+            std::cerr << "warning: a 'registered' frame to be saved has been lost ("
+                      << __func__ << ")." << std::endl;
+        else
+            push_reg_queue_ = current_frame_reg_;
+    }
     void saveCurrentFrame(){
         saveCurrentColorFrame();
         saveCurrentDepthFrame();
+        saveCurrentRegFrame();
     }
 
     void enterMainLoop();
@@ -164,15 +175,19 @@ private:
     bool saveColor( const std::string& file_path ); // when save color frames as pictures
     bool saveDepth( const std::string& file_path );
     int saveKinectParams( const std::string& file_path )const{
-        return saveKinectParams( file_path, device_->getIrCameraParams(),
-                                 device_->getColorCameraParams() );
+        kinect_->saveKinectParams( file_path );
+        // return saveKinectParams( file_path, device_->getIrCameraParams(),
+        //                          device_->getColorCameraParams() );
     }
-    int saveKinectParams( const std::string& file_path,
-                          const device_t::IrCameraParams& ip,
-                          const device_t::ColorCameraParams& cp )const;
-    int loadKinectParams( const std::string& file_path,
-                          device_t::IrCameraParams& ip,
-                          device_t::ColorCameraParams& cp )const;
+    // int saveKinectParams( const std::string& file_path,
+    //                       const device_t::IrCameraParams& ip,
+    //                       const device_t::ColorCameraParams& cp )const;
+    int loadKinectParams( const std::string& file_path ){
+        kinect_->loadKinectParams( file_path );
+    }
+    // int loadKinectParams( const std::string& file_path,
+    //                       device_t::IrCameraParams& ip,
+    //                       device_t::ColorCameraParams& cp )const;
     void createSceneDir();
     void waitVideoWriterToBeOpened( cv::VideoWriter& video_writer );
     void sync();
@@ -231,7 +246,9 @@ private:
     bool isStandalone()const{ return (recorder_mode_ & 1) == 0; }
     bool specifyEachFrame()const{ return (recorder_mode_ & 2) == 2; }
     bool saveAsVideo()const{ return (recorder_mode_ & 4) == 4; }
-    bool queuesAreEmpty()const{ return color_queue_.empty() && depth_queue_.empty(); }
+    bool queuesAreEmpty()const{
+        return color_queue_.empty() && depth_queue_.empty() && reg_queue_.empty();
+    }
 
     // project src onto plane ax+by+cz+d=0
     pcl::PointXYZ project( const float a, const float b, const float c, const float d,
@@ -246,38 +263,6 @@ private:
         return loop_freq <= 0 ? true : ( frame_count * freq ) % loop_freq < freq;
     }
 
-    // class FpsCalculator{
-    // public:
-    //     FpsCalculator( const int update_cycle )
-    //         : loop_count_( 0 ),
-    //           timestamp_( clock() ),
-    //           update_cycle_( update_cycle ),
-    //           fps_( 0.0 ){}
-    //     ~FpsCalculator(){}
-    //     bool fps( volatile double& out_fps ){
-    //         bool ret = false;
-    //         if( ++loop_count_ % update_cycle_ == 0 ){
-    //             clock_t now = clock();
-    //             fps_ = (double)(update_cycle_*CLOCKS_PER_SEC)/( now - timestamp_ );
-    //             timestamp_ = now;
-    //             ret = true;
-    //             loop_count_ = 0;
-    //         }
-    //         out_fps = fps_;
-    //         return ret;
-    //     }
-    //     double fps(){
-    //         double ret = 0;
-    //         fps( ret );
-    //         return ret;
-    //     }
-
-    // private:
-    //     int loop_count_;
-    //     clock_t timestamp_;
-    //     int update_cycle_;
-    //     double fps_;
-    // };
 
     class FpsCalculator{
     public:
@@ -317,13 +302,15 @@ private:
     };
 
 
-    MyFileLogger logger_;
+    // MyFileLogger logger_;
+
+    std::unique_ptr<Kinect2> kinect_;
     
-    libfreenect2::Freenect2 freenect2_;
-    device_t* device_;
-    std::unique_ptr<libfreenect2::SyncMultiFrameListener> listener_;
-    libfreenect2::FrameMap frames_;
-    std::unique_ptr<libfreenect2::Registration> registration_;
+    // libfreenect2::Freenect2 freenect2_;
+    // device_t* device_;
+    // std::unique_ptr<libfreenect2::SyncMultiFrameListener> listener_;
+    // libfreenect2::FrameMap frames_;
+    // std::unique_ptr<libfreenect2::Registration> registration_;
 
     std::string out_dir_;
     std::string scene_dir_;
@@ -346,9 +333,16 @@ private:
     std::queue<std::vector<depth_ch_t> * > depth_queue_;
     std::vector<depth_ch_t>* volatile push_depth_queue_;
     volatile bool pop_depth_queue_;
+
+    std::vector<color_ch_t> reg_buf_idle_;
+    std::vector<color_ch_t> reg_buf_[kBufSize];
+    std::vector<color_ch_t> * current_frame_reg_;
+    std::queue<std::vector<color_ch_t> * > reg_queue_;
+    std::vector<color_ch_t>* volatile push_reg_queue_;
+    volatile bool pop_reg_queue_;
     
     cv::Mat img_to_show_;
-    cv::Mat1f H_; // homogenous transformation matrix
+    cv::Mat1d H_; // homogenous transformation matrix
 
     // open video file from main thread via this pointers: opening one from child threads may fail.
     cv::VideoWriter* volatile video_writer_for_main_thread_;
@@ -359,8 +353,8 @@ private:
     volatile uint32_t recorder_mode_;
 
     // color frame constants
-    static const int kCWidth  = 1920;
-    static const int kCHeight = 1080;
+    static const int kCWidth  = Kinect2::kCWidth;
+    static const int kCHeight = Kinect2::kCHeight;
     static const int kCNumOfPixels = kCWidth * kCHeight;
     static const int kCNumOfChannelsPerPixel = 4; // BGRX
     static const int kCNumOfChannels = kCNumOfPixels * kCNumOfChannelsPerPixel;
@@ -368,14 +362,23 @@ private:
     static const int kCNumOfBytes = kCNumOfBytesPerPixel * kCNumOfPixels;
 
     // depth frame constants
-    static const int kDWidth  = 512;
-    static const int kDHeight = 424;
+    static const int kDWidth  = Kinect2::kDWidth;
+    static const int kDHeight = Kinect2::kDHeight;
     static const int kDNumOfPixels = kDWidth * kDHeight;
     static const int kDNumOfChannelsPerPixel = 1;
     static const int kDNumOfChannels = kDNumOfPixels * kDNumOfChannelsPerPixel;
     static const int kDNumOfBytesPerPixel = sizeof(depth_ch_t) * kDNumOfChannelsPerPixel;
     static const int kDNumOfBytes = kDNumOfBytesPerPixel * kDNumOfPixels;
 
+    // 'registered' frame constants
+    static const int kRWidth  = kDWidth;
+    static const int kRHeight = kDHeight;
+    static const int kRNumOfPixels = kRWidth * kRHeight;
+    static const int kRNumOfChannelsPerPixel = 4;
+    static const int kRNumOfChannels = kRNumOfPixels * kRNumOfChannelsPerPixel;
+    static const int kRNumOfBytesPerPixel = sizeof(color_ch_t) * kRNumOfChannelsPerPixel;
+    static const int kRNumOfBytes = kRNumOfBytesPerPixel * kRNumOfPixels;
+    
     // chessboard constants
     static const int kCornersWidth = 10; 
     static const int kCornersHeight = 7; 
