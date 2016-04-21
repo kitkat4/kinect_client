@@ -120,23 +120,8 @@ void KinectRecorder::init(){
         color_buf_idle_.resize( kCNumOfChannels );
         depth_buf_idle_.resize( kDNumOfChannels );
         reg_buf_idle_.resize( kRNumOfChannels );
-        
-    }catch( std::exception& ex ){
-        std::cerr << "error in " << __func__ << ": " << ex.what() << std::endl;
-        throw;
-    }
 
-    set( WaitingForKinectToBeStarted ); 
-
-    return;
-}
-
-void KinectRecorder::startKinectAndCreateWindow(){
-
-    try{
         cv::namedWindow( "color", CV_WINDOW_AUTOSIZE );
-
-
 
         if( kinect_->saveKinectParams() )
             throw std::runtime_error("failed to write kinect parameters.");
@@ -145,8 +130,10 @@ void KinectRecorder::startKinectAndCreateWindow(){
         std::cerr << "error in " << __func__ << ": " << ex.what() << std::endl;
         throw;
     }
-    
+
     set( WaitingForFpsStabilized );
+
+    return;
 }
 
 void KinectRecorder::calibrate(){

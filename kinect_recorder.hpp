@@ -66,7 +66,6 @@ public:
     
     typedef enum{
         InitialState,
-        WaitingForKinectToBeStarted,
         WaitingForFpsStabilized,
         ReadyToRecord,
         WritingData,

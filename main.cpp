@@ -43,7 +43,6 @@ int main(){
         KinectRecorder kinect_recorder( kWorkingDir, server_ip, server_port, specify_each_frame,
                                         15, -1 );
         kinect_recorder.init();
-        kinect_recorder.startKinectAndCreateWindow();
         kinect_recorder.enterMainLoop();
         kinect_recorder.stopKinectAndDestroyWindow();
     }catch( std::exception& ex ){
