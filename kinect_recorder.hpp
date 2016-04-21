@@ -65,6 +65,7 @@ class KinectRecorder{
 public:
     
     typedef enum{
+        Error,
         InitialState,
         WaitingForFpsStabilized,
         ReadyToRecord,
@@ -75,16 +76,17 @@ public:
         Exiting,
     }RecorderState;
 
-    KinectRecorder( const std::string& out_dir,
-                   const std::string& server_ip = "",
-                   const std::string& server_port = "",
-                   const bool specify_each_frame = false,
-                   const int save_fps = kKinectIdealFps,
-                   const double fps_color_video = 29.97,
-                   const std::string& log_file_name = "kinect.log",
-                   const int fourcc_color = // CV_FOURCC( 'M', 'J', 'P', 'G' )
-                   CV_FOURCC('X','V','I','D')
-                   );
+    // KinectRecorder( const std::string& out_dir,
+    //                const std::string& server_ip = "",
+    //                const std::string& server_port = "",
+    //                const bool specify_each_frame = false,
+    //                const int save_fps = kKinectIdealFps,
+    //                const double fps_color_video = 29.97,
+    //                const std::string& log_file_name = "kinect.log",
+    //                const int fourcc_color = // CV_FOURCC( 'M', 'J', 'P', 'G' )
+    //                CV_FOURCC('X','V','I','D')
+    //                );
+    KinectRecorder( const std::string& config_file_path );
     ~KinectRecorder();
 
     void init();
@@ -124,10 +126,13 @@ public:
     }
 
     void enterMainLoop();
+    bool configure( const std::string& config_file_path );
+    operator bool(){ return recorder_state_ != Error; }
     
 private:
     void update();
     void updateQueue();
+
     void save();
 
     bool saveColor( cv::VideoWriter& video_writer ); // when save color frames as a video file
@@ -146,6 +151,7 @@ private:
     void processRecvBuf( const std::vector<char>* buf, // somehow buf as reference doesn't work
                          const boost::system::error_code& error,
                          const std::size_t size );
+    bool fpsKeepsHigh( const double fps )const;
     void showImgAndInfo();
     void putText( cv::Mat& img, const std::string& text, const bool newline = true,
                   const cv::Scalar& color = kSkyBlue,
@@ -155,42 +161,10 @@ private:
         putText( img ,text, newline, kSkyBlue, org );
     };
     
-    std::string toBinaryString( const float value )const{
-        union{
-            float v;
-            uint32_t n;
-        }u;
-        u.v = value;
-        static std::stringstream sstream;
-        sstream.str("");
-        for( int i = 8 * sizeof( value ) - 1; i >= 0; i-- )
-            sstream << (( u.n >> i ) & 1);
-        return sstream.str();
-    }
-    float toFloat( const std::string& str )const{
-        union{
-            float v;
-            uint32_t n;
-        }u;
-        u.v = 0.0;
-        for( int i = 0; i < 8 * sizeof( float ); i++ )
-            if( str[i] == '1')
-                u.n |= (1 << (8 * sizeof( float ) - i - 1));
-        return u.v;
-    }
-    
-    std::string toString( const volatile double value )const{
-        static std::stringstream sstream;
-        sstream.str("");
-        sstream << std::fixed << std::setprecision(3) << value;
-        return sstream.str();
-    }
-    std::string toString( const volatile int value )const{
-        static std::stringstream sstream;
-        sstream.str("");
-        sstream << value;
-        return sstream.str();
-    }
+    std::string toBinaryString( const float value )const;
+    float toFloat( const std::string& str )const;
+    std::string toString( const volatile double value )const;
+    std::string toString( const volatile int value )const;
 
 
     bool is( const uint32_t state )const{ return recorder_state_ == state; }
@@ -208,11 +182,6 @@ private:
         return pcl::PointXYZ( - src.x * d / ( a*src.x + b*src.y + c*src.z ),
                               - src.y * d / ( a*src.x + b*src.y + c*src.z ),
                               - src.z * d / ( a*src.x + b*src.y + c*src.z ) );
-    }
-
-    // to thin out frames according to freq
-    bool notToBeThinnedOut( const uint64_t frame_count, const int freq, int loop_freq )const{
-        return loop_freq <= 0 ? true : ( frame_count * freq ) % loop_freq < freq;
     }
 
 
@@ -255,6 +224,7 @@ private:
 
 
     std::unique_ptr<Kinect2> kinect_;
+    std::string kinect_name_;
     
     std::string out_dir_;
     std::string scene_dir_;
@@ -338,10 +308,6 @@ private:
 
     static const int kKinectIdealFps = 30;
 
-
-
-    const int fps_save_;
-    
     volatile double fps_update_loop_;
     volatile double fps_push_;
     volatile double fps_pop_;

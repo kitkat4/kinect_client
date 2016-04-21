@@ -8,64 +8,123 @@
 #include "kinect_recorder.hpp"
 
 
-KinectRecorder::KinectRecorder( const std::string& out_dir,
-                              const std::string& server_ip,
-                              const std::string& server_port,
-                              const bool specify_each_frame,
-                              const int fps_save,
-                              const double fps_color_video,
-                              const std::string& log_file_name,
-                              const int fourcc_color )
-    : motion_name_( "scene" ),
-      recorder_state_( InitialState ),
-      current_frame_color_( nullptr ),
-      current_frame_depth_( nullptr ),
-      current_frame_reg_( nullptr ),
-      push_color_queue_( nullptr ),
-      push_depth_queue_( nullptr ),
-      push_reg_queue_( nullptr ),
-      pop_color_queue_( false ),
-      pop_depth_queue_( false ),
-      pop_reg_queue_( false ),
-      fps_update_loop_( 0.0 ),
-      fps_push_( 0.0 ),
-      fps_pop_( 0.0 ),
-      fps_main_loop_( 0.0 ),
-      fps_sync_loop_( 0.0 ),
-      H_( cv::Mat::eye( 4, 4, CV_32F ) ),
-      video_writer_for_main_thread_( nullptr ),
-      server_ip_( server_ip ),
-      server_port_( server_port ),
-      local_endpoint_calib_( udp_t::endpoint( udp_t::v4(), kLocalEndpointPortCalib ) ),
-      local_endpoint_sync_( udp_t::endpoint( udp_t::v4(), kLocalEndpointPortSync ) ),
-      key_(0),
-      recorder_mode_(0),
-      out_dir_( out_dir ),
-      fps_save_( fps_save <= kKinectIdealFps ? fps_save : kKinectIdealFps ),
-      fps_color_video_( fps_color_video ),
-      fourcc_color_( fourcc_color ),
-      kinect_(){
+KinectRecorder::KinectRecorder( const std::string& config_file_path )
+    :recorder_state_( Error ),
+     current_frame_color_( nullptr ),
+     current_frame_depth_( nullptr ),
+     current_frame_reg_( nullptr ),
+     push_color_queue_( nullptr ),
+     push_depth_queue_( nullptr ),
+     push_reg_queue_( nullptr ),
+     pop_color_queue_( false ),
+     pop_depth_queue_( false ),
+     pop_reg_queue_( false ),
+     fps_update_loop_( 0.0 ),
+     fps_push_( 0.0 ),
+     fps_pop_( 0.0 ),
+     fps_main_loop_( 0.0 ),
+     fps_sync_loop_( 0.0 ),
+     H_( cv::Mat::eye( 4, 4, CV_32F ) ),
+     video_writer_for_main_thread_( nullptr ),
+     local_endpoint_calib_( udp_t::endpoint( udp_t::v4(), kLocalEndpointPortCalib ) ),
+     local_endpoint_sync_( udp_t::endpoint( udp_t::v4(), kLocalEndpointPortSync ) ),
+     key_(0),
+     recorder_mode_(0){
+    
+    if( configure( config_file_path ) ) // if succeeded
+        recorder_state_ = InitialState;
+}
+
+bool KinectRecorder::configure( const std::string& config_file_path ){
+
+    cv::FileStorage fs( config_file_path, cv::FileStorage::READ );
+    if( ! fs.isOpened() )
+        return false;
+    
+    motion_name_ = (std::string)fs["motion name"];
+    out_dir_ = (std::string)fs["output directory"];
+    kinect_name_ = (std::string)fs["kinect name"];
+    
+    if( (std::string)fs["use as a client?"] == "true" ){
+        recorder_mode_ |= 1;  // client        
+        cv::FileNode fn = fs["server info"];
+        server_ip_ = (std::string)fn["server ip"];
+        server_port_ = (std::string)fn["server port"];
+    }else
+        recorder_mode_ &= ~1; // standalone
+
+    if( (std::string)fs["specify each frame to save"] == "true" )
+        recorder_mode_ |= 2;  // specify each frame        
+    else
+        recorder_mode_ &= ~2; // specify start/stop        
+    
+    if( (std::string)fs["save color images as a video?"] == "true" ){
+        recorder_mode_ |= 4;  // video
+        cv::FileNode fn = fs["color video info"];
+        fps_color_video_ = (double)fn["color video fps"];
+        std::string fourcc = (std::string)fn["color video fourcc"];
+        fourcc_color_ = CV_FOURCC( fourcc[0], fourcc[1], fourcc[2], fourcc[3] );
+    }else
+        recorder_mode_ &= ~4; // set of pictures
+
+    return true;
+}
+
+// KinectRecorder::KinectRecorder( const std::string& out_dir,
+//                                 const std::string& server_ip,
+//                                 const std::string& server_port,
+//                                 const bool specify_each_frame,
+//                                 const double fps_color_video,
+//                                 const std::string& log_file_name,
+//                                 const int fourcc_color )
+//     : motion_name_( "scene" ),
+//       recorder_state_( InitialState ),
+//       current_frame_color_( nullptr ),
+//       current_frame_depth_( nullptr ),
+//       current_frame_reg_( nullptr ),
+//       push_color_queue_( nullptr ),
+//       push_depth_queue_( nullptr ),
+//       push_reg_queue_( nullptr ),
+//       pop_color_queue_( false ),
+//       pop_depth_queue_( false ),
+//       pop_reg_queue_( false ),
+//       fps_update_loop_( 0.0 ),
+//       fps_push_( 0.0 ),
+//       fps_pop_( 0.0 ),
+//       fps_main_loop_( 0.0 ),
+//       fps_sync_loop_( 0.0 ),
+//       H_( cv::Mat::eye( 4, 4, CV_32F ) ),
+//       video_writer_for_main_thread_( nullptr ),
+//       server_ip_( server_ip ),
+//       server_port_( server_port ),
+//       local_endpoint_calib_( udp_t::endpoint( udp_t::v4(), kLocalEndpointPortCalib ) ),
+//       local_endpoint_sync_( udp_t::endpoint( udp_t::v4(), kLocalEndpointPortSync ) ),
+//       key_(0),
+//       recorder_mode_(0),
+//       out_dir_( out_dir ),
+//       fps_color_video_( fps_color_video ),
+//       fourcc_color_( fourcc_color ){
     
 
-    // whether this works as a client or a standalone program
-    if( server_ip_ == "" || server_port_ == "" )
-        recorder_mode_ &= ~1; // standalone
-    else
-        recorder_mode_ |= 1;  // client
+//     // whether this works as a client or a standalone program
+//     if( server_ip_ == "" || server_port_ == "" )
+//         recorder_mode_ &= ~1; // standalone
+//     else
+//         recorder_mode_ |= 1;  // client
 
-    // whether you specify each frame or start/stop
-    if( specify_each_frame )
-        recorder_mode_ |= 2;  // specify each frame
-    else
-        recorder_mode_ &= ~2; // specify start/stop
+//     // whether you specify each frame or start/stop
+//     if( specify_each_frame )
+//         recorder_mode_ |= 2;  // specify each frame
+//     else
+//         recorder_mode_ &= ~2; // specify start/stop
 
-    // whether you save color frames as a video or a set of pictures
-    if( fps_color_video > 0.0 )
-        recorder_mode_ |= 4;  // video
-    else
-        recorder_mode_ &= ~4; // pictures
+//     // whether you save color frames as a video or a set of pictures
+//     if( fps_color_video > 0.0 )
+//         recorder_mode_ |= 4;  // video
+//     else
+//         recorder_mode_ &= ~4; // pictures
 
-}
+// }
 
 KinectRecorder::~KinectRecorder(){
 
@@ -88,7 +147,8 @@ void KinectRecorder::init(){
 
     try{
 
-        kinect_.reset( new Kinect2("kinect509247142542") );
+        // kinect_.reset( new Kinect2("kinect509247142542") );
+        kinect_.reset( new Kinect2( kinect_name_ ) );
         
         if( ! isStandalone() ){
             if( server_ip_ == "" || server_ip_ == "" )
@@ -123,7 +183,7 @@ void KinectRecorder::init(){
 
         cv::namedWindow( "color", CV_WINDOW_AUTOSIZE );
 
-        if( kinect_->saveKinectParams() )
+        if( kinect_->saveKinectParams( out_dir_ + "/" + kinect_name_ + ".dat" ) )
             throw std::runtime_error("failed to write kinect parameters.");
         
     }catch( std::exception& ex ){
@@ -143,8 +203,6 @@ void KinectRecorder::calibrate(){
     static cv::Mat registered_to_show;
 
     try{
-
-        
         std::vector<cv::Point2f> corners;
         while( true ){
 
@@ -200,7 +258,6 @@ void KinectRecorder::calibrate(){
             for( int i_row = 0; i_row < 3; i_row++ )
                 for( int i_col = 0; i_col < 4; i_col++ )
                     H_board_to_target( i_row, i_col ) = recv_buf[ i_row * 4 + i_col ];
-            
             
             H_board_to_target( 3, 0 ) = H_board_to_target( 3, 1 ) = H_board_to_target( 3, 2 ) = 0;
             H_board_to_target( 3, 3 ) = 1;
@@ -428,7 +485,6 @@ void KinectRecorder::enterMainLoop(){
     save_thread_.join();
     update_thread_.join();
 
-
     return;
 }
 
@@ -450,7 +506,7 @@ void KinectRecorder::update(){
         QueryPerformanceFrequency( &freq );
         while( ! is( Exiting ) ){
 
-            static double tmp_fps = 0.0;
+
 
             if( is( Recording ) ){
                 data_dst_color = &color_buf_[ buf_index ][0];
@@ -464,11 +520,9 @@ void KinectRecorder::update(){
             
             kinect_->waitForNewFrame( data_dst_color, data_dst_depth, data_dst_reg );
 
-            static FpsCalculator fps_calc( 15 );
+            static FpsCalculator fps_calc( 30 );
             fps_update_loop_ = fps_calc.fps();
                 
-
-
             cv::resize( cv::Mat( kCHeight, kCWidth,CV_8UC4,
                                  data_dst_color ),
                         img_to_show_, cv::Size(), kResizeScale, kResizeScale );
@@ -484,30 +538,23 @@ void KinectRecorder::update(){
                 current_frame_depth_ = &depth_buf_idle_;
                 current_frame_reg_ = &reg_buf_idle_;
             }
-            
 
-            static FpsCalculator tmp_fps_calc( 15 );
-            if( tmp_fps_calc.fps( tmp_fps ) ){
-                if( is( WaitingForFpsStabilized ) ){
-                    
-                    static int high_fps_count = 0;
-                    
-                    if( tmp_fps >= 14.7 )
-                        high_fps_count++;
-                    else
-                        high_fps_count = 0;
-                    
-                    if( high_fps_count == 3 ){
-                        set( ReadyToRecord );
-                        if( ! isStandalone() )
-                            socket_sync_->send_to( boost::asio::buffer( std::string("[Kinect] ready")), remote_endpoint_ );
+            
+            if( is( WaitingForFpsStabilized ) ){
+                double tmp_fps = 0.0;
+                static FpsCalculator tmp_fps_calc( 30 );
+                if( tmp_fps_calc.fps( tmp_fps ) && fpsKeepsHigh( tmp_fps ) ){
+                    set( ReadyToRecord );
+                    if( ! isStandalone() ){
+                        socket_sync_->send_to( boost::asio::buffer( std::string("[Kinect] ready")),
+                                               remote_endpoint_ );
                     }
                 }
             }
             
-            if( ! specifyEachFrame() && is( Recording ) && notToBeThinnedOut( loop_count, fps_save_, 15 ) ){
+            if( ! specifyEachFrame() && is( Recording )){
                 saveCurrentFrame();
-                static FpsCalculator fps_calc_push( fps_save_ );
+                static FpsCalculator fps_calc_push( 30 );
                 fps_push_ = fps_calc_push.fps();
             }
 
@@ -518,6 +565,7 @@ void KinectRecorder::update(){
         throw;
     }
 }
+
 
 void KinectRecorder::updateQueue(){
     
@@ -543,7 +591,7 @@ void KinectRecorder::updateQueue(){
         pop_depth_queue_ = false;
         pop_reg_queue_ = false;
         
-        static FpsCalculator fps_calc( fps_save_ );
+        static FpsCalculator fps_calc( 30 );
         fps_pop_ = fps_calc.fps();
     }
 
@@ -780,6 +828,23 @@ void KinectRecorder::processRecvBuf( const std::vector<char>* buf,
 
 }
 
+bool KinectRecorder::fpsKeepsHigh( const double fps )const{
+                        
+    static int high_fps_count = 0;
+                    
+    if( fps >= 29.7 )
+        high_fps_count++;
+    else
+        high_fps_count = 0;
+                    
+    if( high_fps_count == 3 ){
+        high_fps_count = 0;
+        return true;
+    }
+    return false;
+}
+
+
 void KinectRecorder::showImgAndInfo(){
 
     if( ! current_frame_color_ )
@@ -856,6 +921,46 @@ void KinectRecorder::putText( cv::Mat& img, const std::string& text, const bool 
     cv::putText( img, text, cv::Point( x, y ), cv::FONT_HERSHEY_SIMPLEX,
                  kFontScale, color, kTextThickness );
 }
+
+std::string KinectRecorder::toBinaryString( const float value )const{
+    union{
+        float v;
+        uint32_t n;
+    }u;
+    u.v = value;
+    static std::stringstream sstream;
+    sstream.str("");
+    for( int i = 8 * sizeof( value ) - 1; i >= 0; i-- )
+        sstream << (( u.n >> i ) & 1);
+    return sstream.str();
+}
+
+float KinectRecorder::toFloat( const std::string& str )const{
+    union{
+        float v;
+        uint32_t n;
+    }u;
+    u.v = 0.0;
+    for( int i = 0; i < 8 * sizeof( float ); i++ )
+        if( str[i] == '1')
+            u.n |= (1 << (8 * sizeof( float ) - i - 1));
+    return u.v;
+}
+
+std::string KinectRecorder::toString( const volatile double value )const{
+    static std::stringstream sstream;
+    sstream.str("");
+    sstream << std::fixed << std::setprecision(3) << value;
+    return sstream.str();
+}
+
+std::string KinectRecorder::toString( const volatile int value )const{
+    static std::stringstream sstream;
+    sstream.str("");
+    sstream << value;
+    return sstream.str();
+}
+
 
 const double KinectRecorder::kResizeScale = 0.5;
 const double KinectRecorder::kFontScale = 0.6;
