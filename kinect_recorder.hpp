@@ -1,7 +1,7 @@
 /*
   Kinect v2 recorder.
-
-  created by Katsumasa Kitajima
+  Katsumasa Kitajima
+  kitajima@ynl.t.u-tokyo.ac.jp
  */
 
 
@@ -13,11 +13,6 @@
 
 
 #include <opencv2/opencv.hpp>
-
-// #include <libfreenect2/libfreenect2.hpp>
-// #include <libfreenect2/frame_listener_impl.h>
-// #include <libfreenect2/registration.h>
-// #include <libfreenect2/logger.h>
 
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
@@ -44,7 +39,6 @@
 #include <algorithm>
 #include <cmath>
 
-//#include <mmsystem.h> // timeGetTime()
 #include <windows.h>
 
 
@@ -56,39 +50,6 @@
 #else
 #define ISNAN(f) std::isnan(f)
 #endif
-
-
-
-// class MyFileLogger: public libfreenect2::Logger{
-    
-// private:
-//     std::ofstream logfile_;
-// public:
-//     MyFileLogger(const char *filename){
-//         open( filename );
-//         level_ = Debug;
-
-//     }
-//     ~MyFileLogger(){
-//         logfile_.close();
-//     }
-//     void open( const char* filename ){
-//         if( filename )
-//             logfile_.open(filename, std::ofstream::app );
-//         if( good() ){
-//             setlocale( LC_ALL, "JPN" );
-//             time_t tmp_time = time( nullptr );
-//             logfile_ << std::endl
-//                      << asctime( localtime( &tmp_time ) ); 
-//         }
-//     }
-
-//     bool good(){
-//         return logfile_.is_open() && logfile_.good();
-//     }
-//     virtual void log(Level level, const std::string &message);
-// };
-
 
 
 class KinectRecorder{
@@ -132,7 +93,6 @@ public:
     void calibrate();
     void stopKinectAndDestroyWindow(){
         cv::destroyAllWindows();
-        // device_->stop();
         set( Exiting );
     }
     
@@ -176,18 +136,11 @@ private:
     bool saveDepth( const std::string& file_path );
     int saveKinectParams( const std::string& file_path )const{
         kinect_->saveKinectParams( file_path );
-        // return saveKinectParams( file_path, device_->getIrCameraParams(),
-        //                          device_->getColorCameraParams() );
     }
-    // int saveKinectParams( const std::string& file_path,
-    //                       const device_t::IrCameraParams& ip,
-    //                       const device_t::ColorCameraParams& cp )const;
+
     int loadKinectParams( const std::string& file_path ){
         kinect_->loadKinectParams( file_path );
     }
-    // int loadKinectParams( const std::string& file_path,
-    //                       device_t::IrCameraParams& ip,
-    //                       device_t::ColorCameraParams& cp )const;
     void createSceneDir();
     void waitVideoWriterToBeOpened( cv::VideoWriter& video_writer );
     void sync();
@@ -280,7 +233,7 @@ private:
             if( ++loop_count_ % update_cycle_ == 0 ){
                 LARGE_INTEGER now;
                 QueryPerformanceCounter( &now );
-                fps_ = (double)(update_cycle_*freq_.QuadPart)/( now.QuadPart - timestamp_.QuadPart );
+                fps_ = (double)(update_cycle_*freq_.QuadPart)/(now.QuadPart - timestamp_.QuadPart);
                 timestamp_ = now;
                 ret = true;
                 loop_count_ = 0;
@@ -302,16 +255,8 @@ private:
     };
 
 
-    // MyFileLogger logger_;
-
     std::unique_ptr<Kinect2> kinect_;
     
-    // libfreenect2::Freenect2 freenect2_;
-    // device_t* device_;
-    // std::unique_ptr<libfreenect2::SyncMultiFrameListener> listener_;
-    // libfreenect2::FrameMap frames_;
-    // std::unique_ptr<libfreenect2::Registration> registration_;
-
     std::string out_dir_;
     std::string scene_dir_;
     std::string motion_name_;
