@@ -48,9 +48,6 @@ bool KinectRecorder::configure( const std::string& config_file_path ){
     motion_name_ = fs["motion name"].empty() ? "scene" : (std::string)fs["motion name"];
     out_dir_ = fs["output directory"].empty() ? "." : (std::string)fs["output directory"];
     kinect_name_ = fs["kinect name"].empty() ? "kinect" : (std::string)fs["kinect name"];
-    freq_ = fs["frequency to get data"].empty() ? 30 : (int)fs["frequency to get data"];
-    if( freq_ > 25 )
-        freq_ = 30;
     
     if( (std::string)fs["use as a client?"] == "true" ){
         recorder_mode_ |= 1;  // client        
@@ -60,6 +57,12 @@ bool KinectRecorder::configure( const std::string& config_file_path ){
     }else
         recorder_mode_ &= ~1; // standalone
 
+    if( isStandalone() ){
+        freq_ = fs["frequency to get data"].empty() ? 30 : (int)fs["frequency to get data"];
+        if( freq_ > 30 || freq_ <= 0 )
+            freq_ = 30;
+    }else freq_ = 30;
+    
     if( (std::string)fs["specify each frame to save"] == "true" )
         recorder_mode_ |= 2;  // specify each frame        
     else
@@ -478,15 +481,20 @@ void KinectRecorder::update(){
                 data_dst_reg = &reg_buf_idle_[0];
             }
 
-            uint32_t timestamp;
+            double offset;
+            {
+                LARGE_INTEGER timestamp;
+                QueryPerformanceCounter( &timestamp );
 
-            kinect_->waitForNewFrame( data_dst_color, data_dst_depth, data_dst_reg, &timestamp );
+                kinect_->waitForNewFrame( data_dst_color, data_dst_depth, data_dst_reg );
 
-            static uint32_t initial_timestamp = timestamp;
+                static LARGE_INTEGER initial_timestamp = timestamp, freq;
+                QueryPerformanceFrequency( &freq );
             
-            double offset = timestamp - initial_timestamp - (i_frame * 10000) / (double)freq_;
+                offset = (double)1000*(timestamp.QuadPart - initial_timestamp.QuadPart)/freq.QuadPart - (double)i_frame * 1000 / freq_ ;
+            }
             
-            if( freq_ < 30 && offset < -166.6 )
+            if( freq_ < 30 && offset < -16.66 )
                 continue;
             
             static FpsCalculator fps_calc( 30 );
