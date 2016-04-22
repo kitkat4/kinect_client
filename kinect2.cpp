@@ -178,16 +178,10 @@ int Kinect2::loadKinectParams(  const std::string& file_path ){
     }
 }
 
-void Kinect2::waitForNewFrame(){
-    if( failed() )
-        return;
-    listener_->waitForNewFrame( frames_ );
-    listener_->release( frames_ );    
-}
-
 void Kinect2::waitForNewFrame( color_ch_t* const color,
                                depth_ch_t* const depth,
-                               color_ch_t* const registered ){
+                               color_ch_t* const registered,
+                               uint32_t* const timestamp ){
 
     static frame_t undistorted_dump( kDWidth, kDHeight, kDNumOfBytesPerPixel );
     static frame_t registered_dump( kDWidth, kDHeight, kDNumOfBytesPerPixel );
@@ -195,6 +189,10 @@ void Kinect2::waitForNewFrame( color_ch_t* const color,
     if( failed() )
         return;
     listener_->waitForNewFrame( frames_ );
+
+    if( timestamp )
+        *timestamp = frames_[frame_t::Color]->timestamp;
+    
     if( color )
         std::copy( frames_[frame_t::Color]->data,
                    frames_[frame_t::Color]->data + kCNumOfChannels, color );
@@ -214,6 +212,8 @@ void Kinect2::waitForNewFrame( color_ch_t* const color,
     }
     
     listener_->release( frames_ );
+
+    return;
 }
 
 void Kinect2::mapDepthPointToCameraSpace( const int row,

@@ -220,6 +220,8 @@ private:
     std::string out_dir_;
     std::string scene_dir_;
     std::string motion_name_;
+
+    int freq_;
     
     static const int kBufSize = 600;
 

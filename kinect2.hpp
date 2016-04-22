@@ -61,12 +61,16 @@ public:
     
     // Waits for the next frame and store data to the specified pointers.
     // Specify nullptr as those you don't need.
+    // The unit of timestamp is 0.1[ms].
     void waitForNewFrame( color_ch_t* const color,
                           depth_ch_t* const depth,
-                          color_ch_t* const registered );
-    
+                          color_ch_t* const registered,
+                          uint32_t* const timestamp = nullptr );
     // Just waits for the next frame and does nothing.
-    void waitForNewFrame();
+    // The unit of timestamp is 0.1[ms].
+    void waitForNewFrame( uint32_t* const timestamp = nullptr ){
+        waitForNewFrame( nullptr, nullptr, nullptr, timestamp );
+    }
     // Converts depth pixel location and depth value to 3D point.
     void mapDepthPointToCameraSpace( const int row,
                                      const int col,

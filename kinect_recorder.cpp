@@ -48,6 +48,9 @@ bool KinectRecorder::configure( const std::string& config_file_path ){
     motion_name_ = fs["motion name"].empty() ? "scene" : (std::string)fs["motion name"];
     out_dir_ = fs["output directory"].empty() ? "." : (std::string)fs["output directory"];
     kinect_name_ = fs["kinect name"].empty() ? "kinect" : (std::string)fs["kinect name"];
+    freq_ = fs["frequency to get data"].empty() ? 30 : (int)fs["frequency to get data"];
+    if( freq_ > 25 )
+        freq_ = 30;
     
     if( (std::string)fs["use as a client?"] == "true" ){
         recorder_mode_ |= 1;  // client        
@@ -458,13 +461,12 @@ void KinectRecorder::update(){
         while( ! is( WaitingForFpsStabilized ) && ! is( ReadyToRecord ) )
             std::this_thread::sleep_for( std::chrono::milliseconds( 10 ) );
 
-        uint64_t loop_count = 0;
-        LARGE_INTEGER timestamp, freq;
-        QueryPerformanceCounter( &timestamp );
-        QueryPerformanceFrequency( &freq );
-        while( ! is( Exiting ) ){
-
-
+        {
+            LARGE_INTEGER timestamp, freq;
+            QueryPerformanceCounter( &timestamp );
+            QueryPerformanceFrequency( &freq );
+        }
+        for( int i_frame = 0; ! is( Exiting ); ){
 
             if( is( Recording ) ){
                 data_dst_color = &color_buf_[ buf_index ][0];
@@ -475,9 +477,18 @@ void KinectRecorder::update(){
                 data_dst_depth = &depth_buf_idle_[0];
                 data_dst_reg = &reg_buf_idle_[0];
             }
-            
-            kinect_->waitForNewFrame( data_dst_color, data_dst_depth, data_dst_reg );
 
+            uint32_t timestamp;
+
+            kinect_->waitForNewFrame( data_dst_color, data_dst_depth, data_dst_reg, &timestamp );
+
+            static uint32_t initial_timestamp = timestamp;
+            
+            double offset = timestamp - initial_timestamp - (i_frame * 10000) / (double)freq_;
+            
+            if( freq_ < 30 && offset < -166.6 )
+                continue;
+            
             static FpsCalculator fps_calc( 30 );
             fps_update_loop_ = fps_calc.fps();
                 
@@ -496,17 +507,15 @@ void KinectRecorder::update(){
                 current_frame_depth_ = &depth_buf_idle_;
                 current_frame_reg_ = &reg_buf_idle_;
             }
-
             
             if( is( WaitingForFpsStabilized ) ){
                 double tmp_fps = 0.0;
                 static FpsCalculator tmp_fps_calc( 30 );
                 if( tmp_fps_calc.fps( tmp_fps ) && fpsKeepsHigh( tmp_fps ) ){
                     set( ReadyToRecord );
-                    if( ! isStandalone() ){
+                    if( ! isStandalone() )
                         socket_sync_->send_to( boost::asio::buffer( std::string("[Kinect] ready")),
                                                remote_endpoint_ );
-                    }
                 }
             }
             
@@ -516,7 +525,7 @@ void KinectRecorder::update(){
                 fps_push_ = fps_calc_push.fps();
             }
 
-            loop_count++;
+            i_frame++;
         }
     }catch( std::exception& ex ){
         std::cerr << "error in " << __func__ << ": " << ex.what() << std::endl;
@@ -790,7 +799,7 @@ bool KinectRecorder::fpsKeepsHigh( const double fps )const{
                         
     static int high_fps_count = 0;
                     
-    if( fps >= 29.7 )
+    if( (freq_ < 0 && fps >= 29.7) || (freq_ >= 0 && fps >= freq_ - 0.3) )
         high_fps_count++;
     else
         high_fps_count = 0;
