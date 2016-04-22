@@ -77,16 +77,6 @@ public:
         Exiting,
     }RecorderState;
 
-    // KinectRecorder( const std::string& out_dir,
-    //                const std::string& server_ip = "",
-    //                const std::string& server_port = "",
-    //                const bool specify_each_frame = false,
-    //                const int save_fps = kKinectIdealFps,
-    //                const double fps_color_video = 29.97,
-    //                const std::string& log_file_name = "kinect.log",
-    //                const int fourcc_color = // CV_FOURCC( 'M', 'J', 'P', 'G' )
-    //                CV_FOURCC('X','V','I','D')
-    //                );
     KinectRecorder( const std::string& config_file_path );
     ~KinectRecorder();
 
@@ -261,6 +251,8 @@ private:
 
     // open video file from main thread via this pointers: opening one from child threads may fail.
     std::atomic< cv::VideoWriter* > video_writer_for_main_thread_;
+
+    std::string color_img_extension_;
 
     std::string server_ip_, server_port_;
     

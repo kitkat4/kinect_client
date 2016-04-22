@@ -9,27 +9,31 @@
 
 
 KinectRecorder::KinectRecorder( const std::string& config_file_path )
-    :recorder_state_( Error ),
-     current_frame_color_( nullptr ),
-     current_frame_depth_( nullptr ),
-     current_frame_reg_( nullptr ),
-     push_color_queue_( nullptr ),
-     push_depth_queue_( nullptr ),
-     push_reg_queue_( nullptr ),
-     pop_color_queue_( false ),
-     pop_depth_queue_( false ),
-     pop_reg_queue_( false ),
-     fps_update_loop_( 0.0 ),
-     fps_push_( 0.0 ),
-     fps_pop_( 0.0 ),
-     fps_main_loop_( 0.0 ),
-     fps_sync_loop_( 0.0 ),
-     H_( cv::Mat::eye( 4, 4, CV_32F ) ),
-     video_writer_for_main_thread_( nullptr ),
-     local_endpoint_calib_( udp_t::endpoint( udp_t::v4(), kLocalEndpointPortCalib ) ),
-     local_endpoint_sync_( udp_t::endpoint( udp_t::v4(), kLocalEndpointPortSync ) ),
-     key_(0),
-     recorder_mode_(0){
+    : H_( cv::Mat::eye( 4, 4, CV_32F ) ),
+      current_frame_color_( nullptr ),
+      current_frame_depth_( nullptr ),
+      current_frame_reg_( nullptr ),
+      local_endpoint_calib_( udp_t::endpoint( udp_t::v4(), kLocalEndpointPortCalib ) ),
+      local_endpoint_sync_( udp_t::endpoint( udp_t::v4(), kLocalEndpointPortSync ) ){
+
+    push_color_queue_.store( nullptr );
+    push_depth_queue_.store( nullptr );
+    push_reg_queue_.store( nullptr );
+    video_writer_for_main_thread_.store( nullptr );
+    
+    pop_color_queue_.store( false );
+    pop_depth_queue_.store( false );
+    pop_reg_queue_.store( false );
+        
+    fps_update_loop_.store( 0.0 );
+    fps_push_.store( 0.0 );
+    fps_pop_.store( 0.0 );
+    fps_main_loop_.store( 0.0 );
+    fps_sync_loop_.store( 0.0 );
+    
+    key_.store( 0 );
+    recorder_state_.store( Error );
+    recorder_mode_.store( 0 );
     
     if( configure( config_file_path ) ) // if succeeded
         recorder_state_ = InitialState;
@@ -41,13 +45,13 @@ bool KinectRecorder::configure( const std::string& config_file_path ){
     if( ! fs.isOpened() )
         return false;
     
-    motion_name_ = (std::string)fs["motion name"];
-    out_dir_ = (std::string)fs["output directory"];
-    kinect_name_ = (std::string)fs["kinect name"];
+    motion_name_ = fs["motion name"].empty() ? "scene" : (std::string)fs["motion name"];
+    out_dir_ = fs["output directory"].empty() ? "." : (std::string)fs["output directory"];
+    kinect_name_ = fs["kinect name"].empty() ? "kinect" : (std::string)fs["kinect name"];
     
     if( (std::string)fs["use as a client?"] == "true" ){
         recorder_mode_ |= 1;  // client        
-        cv::FileNode fn = fs["server info"];
+        cv::FileNode fn = fs["server config"];
         server_ip_ = (std::string)fn["server ip"];
         server_port_ = (std::string)fn["server port"];
     }else
@@ -60,71 +64,26 @@ bool KinectRecorder::configure( const std::string& config_file_path ){
     
     if( (std::string)fs["save color images as a video?"] == "true" ){
         recorder_mode_ |= 4;  // video
-        cv::FileNode fn = fs["color video info"];
+        cv::FileNode fn = fs["color video config"];
         fps_color_video_ = (double)fn["color video fps"];
         std::string fourcc = (std::string)fn["color video fourcc"];
-        fourcc_color_ = CV_FOURCC( fourcc[0], fourcc[1], fourcc[2], fourcc[3] );
-    }else
+        if( fourcc.size() == 4 )
+            fourcc_color_ = CV_FOURCC( fourcc[0], fourcc[1], fourcc[2], fourcc[3] );
+        else{
+            std::cerr << "warning: Invalid fourcc specified. Default value will be set." << std::endl;
+            fourcc_color_ = CV_FOURCC( 'X', 'V', 'I', 'D' );
+        }
+    }else{
+        cv::FileNode fn = fs["color image config"];
+        color_img_extension_ = fn["extension"].empty() ? ".jpg" : (std::string)fn["extension"];
+        if( color_img_extension_[0] != '.' )
+            color_img_extension_.insert( 0, 1, '.' );
         recorder_mode_ &= ~4; // set of pictures
+    }
 
     return true;
 }
 
-// KinectRecorder::KinectRecorder( const std::string& out_dir,
-//                                 const std::string& server_ip,
-//                                 const std::string& server_port,
-//                                 const bool specify_each_frame,
-//                                 const double fps_color_video,
-//                                 const std::string& log_file_name,
-//                                 const int fourcc_color )
-//     : motion_name_( "scene" ),
-//       recorder_state_( InitialState ),
-//       current_frame_color_( nullptr ),
-//       current_frame_depth_( nullptr ),
-//       current_frame_reg_( nullptr ),
-//       push_color_queue_( nullptr ),
-//       push_depth_queue_( nullptr ),
-//       push_reg_queue_( nullptr ),
-//       pop_color_queue_( false ),
-//       pop_depth_queue_( false ),
-//       pop_reg_queue_( false ),
-//       fps_update_loop_( 0.0 ),
-//       fps_push_( 0.0 ),
-//       fps_pop_( 0.0 ),
-//       fps_main_loop_( 0.0 ),
-//       fps_sync_loop_( 0.0 ),
-//       H_( cv::Mat::eye( 4, 4, CV_32F ) ),
-//       video_writer_for_main_thread_( nullptr ),
-//       server_ip_( server_ip ),
-//       server_port_( server_port ),
-//       local_endpoint_calib_( udp_t::endpoint( udp_t::v4(), kLocalEndpointPortCalib ) ),
-//       local_endpoint_sync_( udp_t::endpoint( udp_t::v4(), kLocalEndpointPortSync ) ),
-//       key_(0),
-//       recorder_mode_(0),
-//       out_dir_( out_dir ),
-//       fps_color_video_( fps_color_video ),
-//       fourcc_color_( fourcc_color ){
-    
-
-//     // whether this works as a client or a standalone program
-//     if( server_ip_ == "" || server_port_ == "" )
-//         recorder_mode_ &= ~1; // standalone
-//     else
-//         recorder_mode_ |= 1;  // client
-
-//     // whether you specify each frame or start/stop
-//     if( specify_each_frame )
-//         recorder_mode_ |= 2;  // specify each frame
-//     else
-//         recorder_mode_ &= ~2; // specify start/stop
-
-//     // whether you save color frames as a video or a set of pictures
-//     if( fps_color_video > 0.0 )
-//         recorder_mode_ |= 4;  // video
-//     else
-//         recorder_mode_ &= ~4; // pictures
-
-// }
 
 KinectRecorder::~KinectRecorder(){
 
@@ -147,7 +106,6 @@ void KinectRecorder::init(){
 
     try{
 
-        // kinect_.reset( new Kinect2("kinect509247142542") );
         kinect_.reset( new Kinect2( kinect_name_ ) );
         
         if( ! isStandalone() ){
@@ -643,7 +601,7 @@ void KinectRecorder::save(){
                         sstream.str("");
                         sstream << scene_dir_ << "/color"
                                 << std::setw( kNumSetw ) << std::setfill('0') << frame_count
-                                << ".bmp";
+                                << color_img_extension_;
 
                         if( saveColor( sstream.str() ) )
                             frame_count++;
