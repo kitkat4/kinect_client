@@ -427,10 +427,10 @@ void KinectRecorder::enterMainLoop(){
         if( is( Exiting ) )
             continue;
 
-        if( video_writer_for_main_thread_ ){
-            video_writer_for_main_thread_->open( scene_dir_ + "/color.avi",
-                                                 fourcc_color_, fps_color_video_,
-                                                 cv::Size( kCWidth, kCHeight ));
+        if( video_writer_for_main_thread_.load() ){
+            video_writer_for_main_thread_.load()->open( scene_dir_ + "/color.avi",
+                                                        fourcc_color_, fps_color_video_,
+                                                        cv::Size( kCWidth, kCHeight ));
             video_writer_for_main_thread_ = nullptr;
         }
 
@@ -569,16 +569,16 @@ void KinectRecorder::update(){
 
 void KinectRecorder::updateQueue(){
     
-    if( push_color_queue_ ){
-        color_queue_.push( const_cast<std::vector<color_ch_t>*>( push_color_queue_ ) );
+    if( push_color_queue_.load() ){
+        color_queue_.push( push_color_queue_ );
         push_color_queue_ = nullptr;
     }
-    if( push_depth_queue_ ){
-        depth_queue_.push( const_cast<std::vector<depth_ch_t>*>( push_depth_queue_ ) );
+    if( push_depth_queue_.load() ){
+        depth_queue_.push( push_depth_queue_ );
         push_depth_queue_ = nullptr;
     }
-    if( push_reg_queue_ ){
-        reg_queue_.push( const_cast<std::vector<color_ch_t>*>( push_reg_queue_ ) );
+    if( push_reg_queue_.load() ){
+        reg_queue_.push( push_reg_queue_ );
         push_reg_queue_ = nullptr;
     }
     if( pop_color_queue_ && pop_depth_queue_ && pop_reg_queue_ &&
@@ -737,7 +737,7 @@ void KinectRecorder::waitVideoWriterToBeOpened( cv::VideoWriter& video_writer ){
     video_writer_for_main_thread_ = &video_writer;
     // wait for video_writer_color to be opened
     int count = 0;
-    while( video_writer_for_main_thread_ ){ 
+    while( video_writer_for_main_thread_.load() ){ 
         std::this_thread::sleep_for( std::chrono::milliseconds( 1 ));
         if( count++ > 5000 ){
             std::cerr << "error: failed to open " << scene_dir_ + "/color.avi"
@@ -947,14 +947,14 @@ float KinectRecorder::toFloat( const std::string& str )const{
     return u.v;
 }
 
-std::string KinectRecorder::toString( const volatile double value )const{
+std::string KinectRecorder::toString( const double value )const{
     static std::stringstream sstream;
     sstream.str("");
     sstream << std::fixed << std::setprecision(3) << value;
     return sstream.str();
 }
 
-std::string KinectRecorder::toString( const volatile int value )const{
+std::string KinectRecorder::toString( const int value )const{
     static std::stringstream sstream;
     sstream.str("");
     sstream << value;

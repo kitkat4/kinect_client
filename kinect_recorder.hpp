@@ -25,6 +25,7 @@
 #include <boost/asio.hpp>
 
 #include <thread>
+#include <atomic>
 #include <chrono>
 #include <memory>
 #include <string>
@@ -99,21 +100,21 @@ public:
     
 
     void saveCurrentColorFrame(){
-        if( push_color_queue_ )
+        if( push_color_queue_.load() )
             std::cerr << "warning: a color frame to be saved has been lost ("
                       << __func__ << ")." << std::endl;
         else
             push_color_queue_ = current_frame_color_;
     }
     void saveCurrentDepthFrame(){
-        if( push_depth_queue_ )
+        if( push_depth_queue_.load() )
             std::cerr << "warning: a depth frame to be saved has been lost ("
                       << __func__ << ")." << std::endl;
         else
             push_depth_queue_ = current_frame_depth_;
     }
     void saveCurrentRegFrame(){
-        if( push_reg_queue_ )
+        if( push_reg_queue_.load() )
             std::cerr << "warning: a 'registered' frame to be saved has been lost ("
                       << __func__ << ")." << std::endl;
         else
@@ -163,8 +164,8 @@ private:
     
     std::string toBinaryString( const float value )const;
     float toFloat( const std::string& str )const;
-    std::string toString( const volatile double value )const;
-    std::string toString( const volatile int value )const;
+    std::string toString( const double value )const;
+    std::string toString( const int value )const;
 
 
     bool is( const uint32_t state )const{ return recorder_state_ == state; }
@@ -196,7 +197,7 @@ private:
             QueryPerformanceFrequency( &freq_ );
         }
         ~FpsCalculator(){}
-        bool fps( volatile double& out_fps ){
+        bool fps( double& out_fps ){
             bool ret = false;
             if( ++loop_count_ % update_cycle_ == 0 ){
                 LARGE_INTEGER now;
@@ -236,8 +237,8 @@ private:
     std::vector<color_ch_t> color_buf_[kBufSize];
     std::vector<color_ch_t> * current_frame_color_;
     std::queue<std::vector<color_ch_t> * > color_queue_;
-    std::vector<color_ch_t>* volatile push_color_queue_;
-    volatile bool pop_color_queue_;
+    std::atomic< std::vector<color_ch_t>* > push_color_queue_;
+    std::atomic_bool pop_color_queue_;
     int fourcc_color_;
     double fps_color_video_;
 
@@ -245,26 +246,26 @@ private:
     std::vector<depth_ch_t> depth_buf_[kBufSize];
     std::vector<depth_ch_t>* current_frame_depth_;
     std::queue<std::vector<depth_ch_t> * > depth_queue_;
-    std::vector<depth_ch_t>* volatile push_depth_queue_;
-    volatile bool pop_depth_queue_;
+    std::atomic< std::vector<depth_ch_t>* > push_depth_queue_;
+    std::atomic_bool pop_depth_queue_;
 
     std::vector<color_ch_t> reg_buf_idle_;
     std::vector<color_ch_t> reg_buf_[kBufSize];
     std::vector<color_ch_t> * current_frame_reg_;
     std::queue<std::vector<color_ch_t> * > reg_queue_;
-    std::vector<color_ch_t>* volatile push_reg_queue_;
-    volatile bool pop_reg_queue_;
+    std::atomic< std::vector<color_ch_t>* > push_reg_queue_;
+    std::atomic_bool pop_reg_queue_;
     
     cv::Mat img_to_show_;
     cv::Mat1d H_; // homogenous transformation matrix
 
     // open video file from main thread via this pointers: opening one from child threads may fail.
-    cv::VideoWriter* volatile video_writer_for_main_thread_;
+    std::atomic< cv::VideoWriter* > video_writer_for_main_thread_;
 
     std::string server_ip_, server_port_;
     
-    volatile uint32_t recorder_state_;
-    volatile uint32_t recorder_mode_;
+    std::atomic_uint32_t recorder_state_;
+    std::atomic_uint32_t recorder_mode_;
 
     // color frame constants
     static const int kCWidth  = Kinect2::kCWidth;
@@ -308,11 +309,11 @@ private:
 
     static const int kKinectIdealFps = 30;
 
-    volatile double fps_update_loop_;
-    volatile double fps_push_;
-    volatile double fps_pop_;
-    volatile double fps_main_loop_;
-    volatile double fps_sync_loop_;
+    std::atomic<double> fps_update_loop_;
+    std::atomic<double> fps_push_;
+    std::atomic<double> fps_pop_;
+    std::atomic<double> fps_main_loop_;
+    std::atomic<double> fps_sync_loop_;
 
     std::thread save_thread_;
     std::thread update_thread_;
@@ -330,7 +331,7 @@ private:
     static const uint16_t kLocalEndpointPortSync  = 49998;
     static const uint16_t kLocalEndpointPortCalib = 49999;
 
-    volatile int key_;
+    std::atomic_int key_;
 
 };
 
