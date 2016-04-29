@@ -601,7 +601,7 @@ void KinectRecorder::save(){
 
             }
 
-            int frame_count = 0;
+            int frame_count = 1;
 
             while( is( Recording ) || ! queuesAreEmpty() ){ // frame loop
                 if( is( Exiting ) )
