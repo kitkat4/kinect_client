@@ -205,7 +205,7 @@ void KinectRecorder::calibrate(){
         cv::Mat1f H_board_to_target(4, 4);
         H_board_to_target = cv::Mat1f::eye(4,4);
 
-        if( server_ip_ != "" && server_port_ != "" && socket_calib_ ){ // fill in H_board_to_target
+        if( ! isStandalone() && server_ip_ != "" && server_port_ != "" && socket_calib_ ){ // fill in H_board_to_target
 
             socket_calib_->send_to( boost::asio::buffer( std::string("[Kinect] QUERY: H_mocap_to_chessboard") ), remote_endpoint_ );
 
@@ -246,7 +246,7 @@ void KinectRecorder::calibrate(){
                                                      point.x,
                                                      point.y,
                                                      point.z );
-                
+                if( ISNAN( point.x ) ) std::cerr << "nan in " << __LINE__ << std::endl; 
                 (*cloud)( i_col - min_x, i_row - min_y ) =  point;
             }
         }
@@ -293,6 +293,8 @@ void KinectRecorder::calibrate(){
                     depth_ch_t d1 =
                         depth_frame[ y1 * kDWidth + x1 ];
                     kinect_->mapDepthPointToCameraSpace( y1, x1, d1, p1.x, p1.y, p1.z );
+                    if( ISNAN( p1.x ) ) std::cerr << "nan in " << __LINE__ << std::endl;
+
                 }
                 pcl::PointXYZ p2;
                 {// populate p2
@@ -301,6 +303,7 @@ void KinectRecorder::calibrate(){
                     depth_ch_t d2 =
                         depth_frame[ y2 * kDWidth + x2 ];
                     kinect_->mapDepthPointToCameraSpace( y2, x2, d2, p2.x, p2.y, p2.z );
+                    if( ISNAN( p2.x ) ) std::cerr << "nan in " << __LINE__ << std::endl;
                 }
                 pcl::PointXYZ projected1 = project( a, b, c, d, p1 ),
                     projected2 = project( a, b, c, d, p2 );
@@ -322,12 +325,14 @@ void KinectRecorder::calibrate(){
             pcl::PointXYZ total(0,0,0);
             for( int i = 0; i < kCornersWidth * kCornersHeight; i++ ){
                 pcl::PointXYZ p;
-                
+                int x = corners[i].x;
+                int y = corners[i].y;
                 depth_ch_t depth
-                    = depth_frame[ corners[i].y * kDWidth + corners[i].x ];
-                kinect_->mapDepthPointToCameraSpace( corners[i].y, corners[i].x, depth,
+                    = depth_frame[ y * kDWidth + x ];
+                std::cerr << x << " "<< y <<" " <<depth <<std::endl;
+                kinect_->mapDepthPointToCameraSpace( y, x, depth,
                                                      p.x, p.y, p.z );
-                
+                if( ISNAN( p.x ) ) std::cerr << "nan in " << __LINE__ << std::endl;                
                 total.x += p.x;
                 total.y += p.y;
                 total.z += p.z;
@@ -779,12 +784,12 @@ void KinectRecorder::processRecvBuf( const std::vector<char>* buf,
         frame_id = *(int32_t*)( &(*buf)[1] );
         std::cerr << "\rreceived frame_id: " << std::setw(5) << frame_id << "  "
                   << std::flush;
-        if( frame_id == 0 && is( ReadyToRecord ) ){ // start recording 
+        if( frame_id == 1 && is( ReadyToRecord ) ){ // start recording 
             if( ! queuesAreEmpty() )
                 throw std::runtime_error( "not ready to start recording." );
             set( Recording );
             saveCurrentFrame();
-            frame_id_prev = 0;
+            frame_id_prev = frame_id;
         }else if( is( Recording ) ){
 
             static FpsCalculator fps_calc( 15 );
