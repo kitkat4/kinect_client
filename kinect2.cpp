@@ -2,11 +2,11 @@
 
 
 
-Kinect2::Kinect2( const std::string& name )
+Kinect2::Kinect2( const std::string& name, const char* const serial_num )
     : state_( Good ),
       device_( nullptr ){
 
-    open( name );
+    open( name, serial_num );
 }
 
 Kinect2::Kinect2()
@@ -18,7 +18,7 @@ Kinect2::~Kinect2(){
     close();
 }
 
-uint32_t Kinect2::open( const std::string& name ){
+uint32_t Kinect2::open( const std::string& name, const char* const serial_num ){
 
     try{
         name_ = name;
@@ -35,8 +35,19 @@ uint32_t Kinect2::open( const std::string& name ){
         if( succeeded() && freenect2_.enumerateDevices() == 0 )
             set( NoKinectFound );
 
-        if( succeeded() )
-            device_ = freenect2_.openDevice( freenect2_.getDefaultDeviceSerialNumber() );
+        if( succeeded() ){
+            // pipeline_.reset( new libfreenect2::OpenGLPacketPipeline() );
+            if( pipeline_ )
+                if( serial_num )
+                    device_ = freenect2_.openDevice( serial_num, pipeline_.get() );
+                else
+                    device_ = freenect2_.openDevice( freenect2_.getDefaultDeviceSerialNumber(), pipeline_.get() );
+            else
+                if( serial_num )
+                    device_ = freenect2_.openDevice( serial_num );
+                else
+                    device_ = freenect2_.openDevice( freenect2_.getDefaultDeviceSerialNumber() );
+        }
         if( device_ == 0 )
             set( FailedToOpenKinect );
 

@@ -80,7 +80,10 @@ public:
     KinectRecorder( const std::string& config_file_path );
     ~KinectRecorder();
 
+    // Specify device_index explicitly when you use multiple kinect sensors at the same time as follows:
+    // 0 for the first device, 1 for the second device, etc.
     void init();
+    
     void startKinectAndCreateWindow();
     void calibrate();
     void stopKinectAndDestroyWindow(){
@@ -216,6 +219,8 @@ private:
 
     std::unique_ptr<Kinect2> kinect_;
     std::string kinect_name_;
+    std::string serial_num_;
+
     
     std::string out_dir_;
     std::string scene_dir_;
@@ -311,19 +316,21 @@ private:
 
     std::thread save_thread_;
     std::thread update_thread_;
+    std::thread update_queue_thread_;
     
     // used when synchronizing with server is needed 
     std::thread sync_thread_;
     udp_t::endpoint remote_endpoint_;
     udp_t::endpoint local_endpoint_sync_;
     udp_t::endpoint local_endpoint_calib_;
+    uint16_t local_endpoint_port_sync_ ;
+    uint16_t local_endpoint_port_calib_;
+
     // Declaration of io_service_ should be prior to that of sockets.
     // This order of declaration affects destruction order and prevents segmentation fault.
     boost::asio::io_service io_service_; 
     std::unique_ptr<udp_t::socket> socket_calib_;
     std::unique_ptr<udp_t::socket> socket_sync_;
-    static const uint16_t kLocalEndpointPortSync  = 49998;
-    static const uint16_t kLocalEndpointPortCalib = 49999;
 
     std::atomic_int key_;
 
