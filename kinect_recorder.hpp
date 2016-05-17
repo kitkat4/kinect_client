@@ -225,7 +225,6 @@ private:
     
     static const int kBufSize = 600;
 
-    std::vector<color_ch_t> color_buf_idle_;
     std::vector<color_ch_t> color_buf_[kBufSize];
     std::vector<color_ch_t> * current_frame_color_;
     std::queue<std::vector<color_ch_t> * > color_queue_;
@@ -234,14 +233,12 @@ private:
     int fourcc_color_;
     double fps_color_video_;
 
-    std::vector<depth_ch_t> depth_buf_idle_;
     std::vector<depth_ch_t> depth_buf_[kBufSize];
     std::vector<depth_ch_t>* current_frame_depth_;
     std::queue<std::vector<depth_ch_t> * > depth_queue_;
     std::atomic< std::vector<depth_ch_t>* > push_depth_queue_;
     std::atomic_bool pop_depth_queue_;
 
-    std::vector<color_ch_t> reg_buf_idle_;
     std::vector<color_ch_t> reg_buf_[kBufSize];
     std::vector<color_ch_t> * current_frame_reg_;
     std::queue<std::vector<color_ch_t> * > reg_queue_;

@@ -141,9 +141,6 @@ void KinectRecorder::init(){
             depth_buf_[i].resize( kDNumOfChannels );
             reg_buf_[i].resize( kRNumOfChannels );
         }
-        color_buf_idle_.resize( kCNumOfChannels );
-        depth_buf_idle_.resize( kDNumOfChannels );
-        reg_buf_idle_.resize( kRNumOfChannels );
 
         cv::namedWindow( "color", CV_WINDOW_AUTOSIZE );
 
@@ -476,15 +473,10 @@ void KinectRecorder::update(){
         }
         for( int i_frame = 0; ! is( Exiting ); ){
 
-            if( is( Recording ) ){
-                data_dst_color = &color_buf_[ buf_index ][0];
-                data_dst_depth = &depth_buf_[ buf_index ][0];
-                data_dst_reg = &reg_buf_[ buf_index][0];
-            }else{
-                data_dst_color = &color_buf_idle_[0];
-                data_dst_depth = &depth_buf_idle_[0];
-                data_dst_reg = &reg_buf_idle_[0];
-            }
+
+            data_dst_color = &color_buf_[ buf_index ][0];
+            data_dst_depth = &depth_buf_[ buf_index ][0];
+            data_dst_reg = &reg_buf_[ buf_index][0];
 
             double offset;
             {
@@ -509,17 +501,11 @@ void KinectRecorder::update(){
                                  data_dst_color ),
                         img_to_show_, cv::Size(), kResizeScale, kResizeScale );
 
-            if( is( Recording ) ){
-                current_frame_color_ = color_buf_ + buf_index;
-                current_frame_depth_ = depth_buf_ + buf_index;
-                current_frame_reg_ = reg_buf_ + buf_index;
-                if( ++buf_index == kBufSize )
-                    buf_index = 0;
-            }else{
-                current_frame_color_ = &color_buf_idle_;
-                current_frame_depth_ = &depth_buf_idle_;
-                current_frame_reg_ = &reg_buf_idle_;
-            }
+            current_frame_color_ = color_buf_ + buf_index;
+            current_frame_depth_ = depth_buf_ + buf_index;
+            current_frame_reg_ = reg_buf_ + buf_index;
+            if( ++buf_index == kBufSize )
+                buf_index = 0;
             
             if( is( WaitingForFpsStabilized ) ){
                 double tmp_fps = 0.0;
