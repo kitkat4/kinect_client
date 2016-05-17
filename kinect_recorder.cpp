@@ -13,8 +13,8 @@ KinectRecorder::KinectRecorder( const std::string& config_file_path )
       current_frame_color_( nullptr ),
       current_frame_depth_( nullptr ),
       current_frame_reg_( nullptr ),
-      local_endpoint_calib_( udp_t::endpoint( udp_t::v4(), kLocalEndpointPortCalib ) ),
-      local_endpoint_sync_( udp_t::endpoint( udp_t::v4(), kLocalEndpointPortSync ) ){
+      serial_num_( "" )
+{
 
     push_color_queue_.store( nullptr );
     push_depth_queue_.store( nullptr );
@@ -37,6 +37,11 @@ KinectRecorder::KinectRecorder( const std::string& config_file_path )
     
     if( configure( config_file_path ) ) // if succeeded
         recorder_state_ = InitialState;
+
+    if( ! isStandalone() ){
+        local_endpoint_calib_ = udp_t::endpoint( udp_t::v4(), local_endpoint_port_calib_ );
+        local_endpoint_sync_ = udp_t::endpoint( udp_t::v4(), local_endpoint_port_sync_ );
+    }
 }
 
 bool KinectRecorder::configure( const std::string& config_file_path ){
@@ -48,9 +53,12 @@ bool KinectRecorder::configure( const std::string& config_file_path ){
     motion_name_ = fs["motion name"].empty() ? "scene" : (std::string)fs["motion name"];
     out_dir_ = fs["output directory"].empty() ? "." : (std::string)fs["output directory"];
     kinect_name_ = fs["kinect name"].empty() ? "kinect" : (std::string)fs["kinect name"];
+    serial_num_ = fs["serial number"].empty() ? "" : (std::string)fs["serial number"];
     
     if( (std::string)fs["use as a client?"] == "true" ){
         recorder_mode_ |= 1;  // client        
+        local_endpoint_port_sync_ = fs["local port1"].empty() ? 49998 : (int)fs["local port1"];
+        local_endpoint_port_calib_ = fs["local port2"].empty() ? 49999 : (int)fs["local port2"];
         cv::FileNode fn = fs["server config"];
         server_ip_ = (std::string)fn["server ip"];
         server_port_ = (std::string)fn["server port"];
@@ -112,15 +120,19 @@ void KinectRecorder::init(){
 
     try{
 
-        kinect_.reset( new Kinect2( kinect_name_ ) );
+        if( serial_num_ != "" )
+            kinect_.reset( new Kinect2( kinect_name_, serial_num_.c_str() ) );
+        else 
+            kinect_.reset( new Kinect2( kinect_name_ ) );
+        if( ! kinect_ )
+            throw std::runtime_error( std::string("failed to open") + kinect_name_ );
         
         if( ! isStandalone() ){
             if( server_ip_ == "" || server_ip_ == "" )
                 throw std::runtime_error("no valid ip/port");
 
             udp_t::resolver resolver(io_service_);
-            udp_t::resolver::query query( udp_t::v4(),
-                                                         server_ip_, server_port_ );
+            udp_t::resolver::query query( udp_t::v4(), server_ip_, server_port_ );
             remote_endpoint_ = *resolver.resolve(query);
             socket_calib_.reset( new udp_t::socket( io_service_, local_endpoint_calib_ ) );
             socket_sync_.reset(  new udp_t::socket( io_service_, local_endpoint_sync_ ) );
@@ -129,8 +141,12 @@ void KinectRecorder::init(){
                                     remote_endpoint_ );
         }
 
+        cv::namedWindow( "color", CV_WINDOW_AUTOSIZE );
+        // cv::namedWindow( "color", CV_WINDOW_OPENGL );
+        
         save_thread_ = std::thread( &KinectRecorder::save, this );
         update_thread_ = std::thread( &KinectRecorder::update, this );
+        update_queue_thread_ = std::thread( &KinectRecorder::updateQueue, this );
 
         if( ! isStandalone() )
             sync_thread_ = std::thread( &KinectRecorder::sync, this );
@@ -142,7 +158,6 @@ void KinectRecorder::init(){
             reg_buf_[i].resize( kRNumOfChannels );
         }
 
-        cv::namedWindow( "color", CV_WINDOW_AUTOSIZE );
 
         if( kinect_->saveKinectParams( out_dir_ + "/" + kinect_name_ + ".dat" ) )
             throw std::runtime_error("failed to write kinect parameters.");
@@ -386,9 +401,10 @@ void KinectRecorder::enterMainLoop(){
         static FpsCalculator fps_calc( 30 );
         fps_main_loop_ = fps_calc.fps();
         
-        showImgAndInfo();
+        // updateQueue();
+
         
-        updateQueue();
+        showImgAndInfo();
         
         if( is( Exiting ) )
             continue;
@@ -450,6 +466,7 @@ void KinectRecorder::enterMainLoop(){
     }
     save_thread_.join();
     update_thread_.join();
+    update_queue_thread_.join();
 
     return;
 }
@@ -481,14 +498,17 @@ void KinectRecorder::update(){
             double offset;
             {
                 LARGE_INTEGER timestamp;
-                QueryPerformanceCounter( &timestamp );
+                if( freq_ < 30 )
+                    QueryPerformanceCounter( &timestamp );
 
                 kinect_->waitForNewFrame( data_dst_color, data_dst_depth, data_dst_reg );
 
                 static LARGE_INTEGER initial_timestamp = timestamp, freq;
-                QueryPerformanceFrequency( &freq );
-            
-                offset = (double)1000*(timestamp.QuadPart - initial_timestamp.QuadPart)/freq.QuadPart - (double)i_frame * 1000 / freq_ ;
+                if( freq_ < 30 )
+                    QueryPerformanceFrequency( &freq );
+
+                if( freq_ < 30 )
+                    offset = (double)1000*(timestamp.QuadPart - initial_timestamp.QuadPart)/freq.QuadPart - (double)i_frame * 1000 / freq_ ;
             }
             
             if( freq_ < 30 && offset < -16.66 )
@@ -525,6 +545,7 @@ void KinectRecorder::update(){
             }
 
             i_frame++;
+
         }
     }catch( std::exception& ex ){
         std::cerr << "error in " << __func__ << ": " << ex.what() << std::endl;
@@ -534,7 +555,9 @@ void KinectRecorder::update(){
 
 
 void KinectRecorder::updateQueue(){
-    
+
+    while( ! is( Exiting ) ){
+        
     if( push_color_queue_.load() ){
         color_queue_.push( push_color_queue_ );
         push_color_queue_ = nullptr;
@@ -561,7 +584,9 @@ void KinectRecorder::updateQueue(){
         fps_pop_ = fps_calc.fps();
     }
 
-    return;
+    std::this_thread::sleep_for( std::chrono::milliseconds( 10 ) );
+    
+    }
 }
 
 void KinectRecorder::save(){

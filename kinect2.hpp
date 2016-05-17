@@ -46,10 +46,10 @@ public:
     typedef uint8_t color_ch_t ;
     typedef float depth_ch_t;
 
-    Kinect2( const std::string& name );
+    Kinect2( const std::string& name, const char* const serial_num = nullptr );
     Kinect2();
     ~Kinect2();
-    uint32_t open( const std::string& name );
+    uint32_t open( const std::string& name, const char* const serial_num = nullptr );
     void close();
     
     // Saves ir/color camera parameters
@@ -123,6 +123,7 @@ private:
 
     libfreenect2::Freenect2 freenect2_;    
     device_t* device_;
+    std::unique_ptr<libfreenect2::PacketPipeline> pipeline_;
     std::unique_ptr<libfreenect2::SyncMultiFrameListener> listener_;
     ir_param_t ir_param_;
     color_param_t color_param_;
