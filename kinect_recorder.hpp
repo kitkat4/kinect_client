@@ -2,7 +2,7 @@
   Kinect v2 recorder.
   Katsumasa Kitajima
   kitajima@ynl.t.u-tokyo.ac.jp
- */
+*/
 
 
 #pragma once
@@ -147,6 +147,10 @@ private:
                          const std::size_t size );
     bool fpsKeepsHigh( const double fps )const;
     void showImgAndInfo();
+    int save_H( const std::string& file_name );
+    int load_H( const std::string& file_name );
+
+    
     void putText( cv::Mat& img, const std::string& text, const bool newline = true,
                   const cv::Scalar& color = kSkyBlue,
                   const cv::Point& org = cv::Point(-1,-1) )const;
@@ -225,6 +229,9 @@ private:
     std::string out_dir_;
     std::string scene_dir_;
     std::string motion_name_;
+    // std::string calibration_file_to_write_;
+    // std::string calibration_file_to_read_;
+
 
     int freq_;
     
@@ -330,6 +337,7 @@ private:
     std::unique_ptr<udp_t::socket> socket_sync_;
 
     std::atomic_int key_;
+    
 
 };
 

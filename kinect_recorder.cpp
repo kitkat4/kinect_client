@@ -2,7 +2,7 @@
   Kinect v2 recorder.
   Katsumasa Kitajima
   kitajima@ynl.t.u-tokyo.ac.jp
- */
+*/
 
 
 #include "kinect_recorder.hpp"
@@ -179,6 +179,11 @@ void KinectRecorder::calibrate(){
     static cv::Mat registered_to_show;
 
     try{
+
+        // if( ! calibration_file_to_read_.empty() )
+        // load_H( calibration_file_to_read_ );
+        // else
+
         std::vector<cv::Point2f> corners;
         while( true ){
 
@@ -212,7 +217,7 @@ void KinectRecorder::calibrate(){
                 return;
 
             cv::imshow( "registered", registered_to_show );
-        }
+        } // end of while( true )
 
         cv::Mat1f H_board_to_target(4, 4);
         H_board_to_target = cv::Mat1f::eye(4,4);
@@ -366,6 +371,11 @@ void KinectRecorder::calibrate(){
         H_board_to_kinect(3,3) = 1.0;
 
         H_ = H_board_to_target * H_board_to_kinect.inv();
+
+
+            
+        // if( ! calibration_file_to_write_.empty() )
+        //     save_H( calibration_file_to_write_ );
         
         std::cerr  << "H_board_to_kinect.inv(): " << std::endl
                    << H_board_to_kinect.inv() << std::endl
@@ -401,8 +411,6 @@ void KinectRecorder::enterMainLoop(){
         static FpsCalculator fps_calc( 30 );
         fps_main_loop_ = fps_calc.fps();
         
-        // updateQueue();
-
         
         showImgAndInfo();
         
@@ -558,33 +566,33 @@ void KinectRecorder::updateQueue(){
 
     while( ! is( Exiting ) ){
         
-    if( push_color_queue_.load() ){
-        color_queue_.push( push_color_queue_ );
-        push_color_queue_ = nullptr;
-    }
-    if( push_depth_queue_.load() ){
-        depth_queue_.push( push_depth_queue_ );
-        push_depth_queue_ = nullptr;
-    }
-    if( push_reg_queue_.load() ){
-        reg_queue_.push( push_reg_queue_ );
-        push_reg_queue_ = nullptr;
-    }
-    if( pop_color_queue_ && pop_depth_queue_ && pop_reg_queue_ &&
-        ! color_queue_.empty() && ! depth_queue_.empty() && ! reg_queue_.empty() ){
+        if( push_color_queue_.load() ){
+            color_queue_.push( push_color_queue_ );
+            push_color_queue_ = nullptr;
+        }
+        if( push_depth_queue_.load() ){
+            depth_queue_.push( push_depth_queue_ );
+            push_depth_queue_ = nullptr;
+        }
+        if( push_reg_queue_.load() ){
+            reg_queue_.push( push_reg_queue_ );
+            push_reg_queue_ = nullptr;
+        }
+        if( pop_color_queue_ && pop_depth_queue_ && pop_reg_queue_ &&
+            ! color_queue_.empty() && ! depth_queue_.empty() && ! reg_queue_.empty() ){
         
-        color_queue_.pop();
-        depth_queue_.pop();
-        reg_queue_.pop();
-        pop_color_queue_ = false;
-        pop_depth_queue_ = false;
-        pop_reg_queue_ = false;
+            color_queue_.pop();
+            depth_queue_.pop();
+            reg_queue_.pop();
+            pop_color_queue_ = false;
+            pop_depth_queue_ = false;
+            pop_reg_queue_ = false;
         
-        static FpsCalculator fps_calc( 30 );
-        fps_pop_ = fps_calc.fps();
-    }
+            static FpsCalculator fps_calc( 30 );
+            fps_pop_ = fps_calc.fps();
+        }
 
-    std::this_thread::sleep_for( std::chrono::milliseconds( 10 ) );
+        std::this_thread::sleep_for( std::chrono::milliseconds( 10 ) );
     
     }
 }
@@ -678,7 +686,7 @@ bool KinectRecorder::saveColor( const std::string& file_path ){
 
     static cv::Mat tmp_color_img;
     cv::flip( cv::Mat( kCHeight, kCWidth, CV_8UC4, &color_queue_.front()->front() ),
-                       tmp_color_img, 1 ); // color images taken from kinect are mirrored
+              tmp_color_img, 1 ); // color images taken from kinect are mirrored
 
     cv::imwrite( file_path, tmp_color_img );
      
@@ -772,8 +780,8 @@ void KinectRecorder::sync(){
 }
 
 void KinectRecorder::processRecvBuf( const std::vector<char>* buf,
-                                    const boost::system::error_code& error,
-                                    const std::size_t size ){
+                                     const boost::system::error_code& error,
+                                     const std::size_t size ){
 
     static int32_t frame_id = 0, frame_id_prev = 0;
         
@@ -784,13 +792,23 @@ void KinectRecorder::processRecvBuf( const std::vector<char>* buf,
         }else if( 0 == strncmp( &(*buf)[0], "cset motion name ", strlen("cset motion name ") ) ){
             motion_name_ = &(*buf)[0] + strlen("cset motion name ");
             std::cerr << "set motion name as " + motion_name_ << std::endl;
-        }
-        else{
+        }else{
+            
+            // if( 0 == strncmp( &(*buf)[0], "cstart calibration", strlen("cstart calibration") ) ){
+            // std::string str_buf( &(*buf)[0], buf->size() );
+            // size_t found;
+            // found = str_buf.find(" --save-as ");
+            // if( found != std::string::npos )
+            //     calibration_file_to_write_ = std::string( &(*buf)[0] + found + strlen(" --save-as ") );
+            // found = str_buf.find(" --read-from ");
+            // if( found != std::string::npos )
+            //     calibration_file_to_read_  = &(*buf)[0] + found + strlen(" --read-from ");
+            // }
+                    
             key_ = (*buf)[1];
             std::cerr << "key_: " << (char)key_ << std::endl;
         }
-    }
-    else if( (*buf)[0] == 'i' ){
+    }else if( (*buf)[0] == 'i' ){
 
         frame_id = *(int32_t*)( &(*buf)[1] );
         std::cerr << "\rreceived frame_id: " << std::setw(5) << frame_id << "  "
@@ -903,8 +921,33 @@ void KinectRecorder::showImgAndInfo(){
     cv::imshow( "color", img_to_show_ );
 }
 
+int KinectRecorder::save_H( const std::string& file_name ){
+        
+    std::ofstream ofs( out_dir_ + "/" + file_name, std::ios::binary );
+    if( ! ofs )
+        return 1;
+    for( int i=0; i<4; i++ )
+        for( int j=0; j<4; j++ )
+            ofs.write( (char*)&H_( i, j ), sizeof( double ) );
+    ofs.close();
+    return 0;
+}
+
+int KinectRecorder::load_H( const std::string& file_name ){
+        
+    std::ifstream ifs( out_dir_ + "/" + file_name, std::ios::binary );
+    if( ! ifs )
+        return 1;
+    for( int i=0; i<4; i++ )
+        for( int j=0; j<4; j++ )
+            ifs.read( (char*)&H_( i, j ), sizeof( double ) ); 
+    ifs.close();
+    return 0;
+}
+
+
 void KinectRecorder::putText( cv::Mat& img, const std::string& text, const bool newline,
-                             const cv::Scalar& color, const cv::Point& org )const{
+                              const cv::Scalar& color, const cv::Point& org )const{
     static int x = 10;
     static int y = 40;
     x = org.x >= 0 ? org.x : 10;
